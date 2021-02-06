@@ -18,3 +18,5 @@ git clone https://github.com/nr77123/wine-mega.git
 cd wine-mega ; sudo ./build_all.sh /opt/wine-mega
 
 3) sit back and relax
+
+p.s. build_all.sh script has reasonable defaults but it's good idea to visually inspect it and adapt as needed. currently it's configured for amd64 systems, builds are incremenental so just run it again after pulling updates and it will do everything
