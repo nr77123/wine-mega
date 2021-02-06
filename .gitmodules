@@ -1,0 +1,3 @@
+[submodule "vkd3d"]
+	path = vkd3d-proton
+	url = https://github.com/HansKristian-Work/vkd3d-proton

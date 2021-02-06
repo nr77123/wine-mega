@@ -22,7 +22,7 @@
 
 #include "dxgi_private.h"
 
-#ifdef SONAME_LIBVKD3D
+#ifdef SONAME_LIBVKD3D_PROTON
 #define VK_NO_PROTOTYPES
 #define VKD3D_NO_PROTOTYPES
 #define VKD3D_NO_VULKAN_H
@@ -920,7 +920,7 @@ cleanup:
     return hr;
 }
 
-#ifdef SONAME_LIBVKD3D
+#ifdef SONAME_LIBVKD3D_PROTON
 
 #ifdef USE_WIN32_VULKAN
 
@@ -2870,9 +2870,9 @@ static void *vkd3d_handle;
 
 static BOOL WINAPI init_vkd3d_once(INIT_ONCE *once, void *param, void **context)
 {
-    TRACE("Loading vkd3d %s.\n", SONAME_LIBVKD3D);
+    TRACE("Loading vkd3d %s.\n", SONAME_LIBVKD3D_PROTON);
 
-    if (!(vkd3d_handle = load_library(SONAME_LIBVKD3D)))
+    if (!(vkd3d_handle = load_library(SONAME_LIBVKD3D_PROTON)))
         return FALSE;
 
     if (!load_vkd3d_functions(vkd3d_handle))
@@ -3242,4 +3242,4 @@ HRESULT d3d12_swapchain_create(IWineDXGIFactory *factory, ID3D12CommandQueue *qu
     return DXGI_ERROR_UNSUPPORTED;
 }
 
-#endif  /* SONAME_LIBVKD3D */
+#endif  /* SONAME_LIBVKD3D_PROTON */

@@ -42,6 +42,25 @@
 # include <unistd.h>
 #endif
 
+#ifdef SONAME_LIBVKD3D_PROTON
+
+// some defs are missing in vkd3d-proton, redefine them
+
+#ifndef VKD3D_RESOURCE_INITIAL_STATE_TRANSITION
+#define VKD3D_RESOURCE_INITIAL_STATE_TRANSITION 0x00000001
+#endif
+#ifndef VKD3D_RESOURCE_PRESENT_STATE_TRANSITION
+#define VKD3D_RESOURCE_PRESENT_STATE_TRANSITION 0x00000002
+#endif
+
+enum vkd3d_api_version
+{
+    VKD3D_API_VERSION_1_0,
+    VKD3D_API_VERSION_1_1,
+    VKD3D_API_VERSION_1_2,
+};
+
+#endif
 
 /****************************************************************
  * Hard-coded values for the Windows platform

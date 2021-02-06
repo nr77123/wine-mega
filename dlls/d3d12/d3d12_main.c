@@ -340,7 +340,7 @@ HRESULT WINAPI D3D12CreateDevice(IUnknown *adapter, D3D_FEATURE_LEVEL minimum_fe
     static const struct vkd3d_application_info application_info =
     {
         .type = VKD3D_STRUCTURE_TYPE_APPLICATION_INFO,
-        .api_version = VKD3D_API_VERSION_1_2,
+        .engine_version = VKD3D_API_VERSION_1_2,
     };
 
     TRACE("adapter %p, minimum_feature_level %#x, iid %s, device %p.\n",

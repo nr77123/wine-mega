@@ -2007,17 +2007,17 @@ fi
 WINE_NOTICE_WITH(vulkan,[test "x$ac_cv_lib_soname_vulkan" = "x" -a "x$ac_cv_lib_soname_MoltenVK" = "x"],
                  [libvulkan and libMoltenVK ${notice_platform}development files not found, Vulkan won't be supported.])
 
-dnl **** Check for vkd3d ****
+dnl **** Check for vkd3d-proton ****
 if test "x$with_vkd3d" != "xno"
 then
-    WINE_PACKAGE_FLAGS(VKD3D,[libvkd3d],,,,
-        [WINE_CHECK_SONAME(vkd3d,vkd3d_serialize_versioned_root_signature,,,[$VKD3D_LIBS])])
+    WINE_PACKAGE_FLAGS(VKD3D,[libvkd3d-proton],,,,
+        [WINE_CHECK_SONAME(vkd3d-proton,vkd3d_serialize_versioned_root_signature,,,[$VKD3D_LIBS])])
     WINE_PACKAGE_FLAGS(VKD3D_SHADER,[libvkd3d-shader],,,,
         [WINE_CHECK_SONAME(vkd3d-shader,vkd3d_shader_compile,,,[$VKD3D_SHADER_LIBS])])
 fi
-WINE_NOTICE_WITH(vkd3d,[test "x$ac_cv_lib_soname_vkd3d" = "x"],
-                 [vkd3d ${notice_platform}development files not found (or too old), Direct3D 12 won't be supported.])
-test "x$ac_cv_lib_soname_vkd3d" != "x" || enable_d3d12=${enable_d3d12:-no}
+WINE_NOTICE_WITH(vkd3d-proton,[test "x$ac_cv_lib_soname_vkd3d-proton" = "x"],
+                 [vkd3d-proton ${notice_platform}development files not found (or too old), Direct3D 12 won't be supported.])
+test "x$ac_cv_lib_soname_vkd3d-proton" != "x" || enable_d3d12=${enable_d3d12:-no}
 
 dnl **** Check for gcrypt ****
 if test "x$with_gcrypt" != "xno"

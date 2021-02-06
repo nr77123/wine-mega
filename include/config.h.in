@@ -1341,7 +1341,7 @@
 #undef SONAME_LIBV4L2
 
 /* Define to the soname of the libvkd3d library. */
-#undef SONAME_LIBVKD3D
+#undef SONAME_LIBVKD3D_PROTON
 
 /* Define to the soname of the libvkd3d-shader library. */
 #undef SONAME_LIBVKD3D_SHADER

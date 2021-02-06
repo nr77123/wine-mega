@@ -2787,8 +2787,8 @@ Some influential environment variables:
               C compiler flags for netapi, overriding pkg-config
   NETAPI_LIBS Linker flags for netapi, overriding pkg-config
   VKD3D_CFLAGS
-              C compiler flags for libvkd3d, overriding pkg-config
-  VKD3D_LIBS  Linker flags for libvkd3d, overriding pkg-config
+              C compiler flags for libvkd3d-proton, overriding pkg-config
+  VKD3D_LIBS  Linker flags for libvkd3d-proton, overriding pkg-config
   VKD3D_SHADER_CFLAGS
               C compiler flags for libvkd3d-shader, overriding pkg-config
   VKD3D_SHADER_LIBS
@@ -7046,7 +7046,7 @@ else
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
+#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -7092,7 +7092,7 @@ else
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
+#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -7116,7 +7116,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
+#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -7161,7 +7161,7 @@ else
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
+#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -7185,7 +7185,7 @@ rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
     We can't simply define LARGE_OFF_T to be 9223372036854775807,
     since some C++ compilers masquerading as C compilers
     incorrectly reject 9223372036854775807.  */
-#define LARGE_OFF_T ((((off_t) 1 << 31) << 31) - 1 + (((off_t) 1 << 31) << 31))
+#define LARGE_OFF_T (((off_t) 1 << 62) - 1 + ((off_t) 1 << 62))
   int off_t_is_large[(LARGE_OFF_T % 2147483629 == 721
 		       && LARGE_OFF_T % 2147483647 == 1)
 		      ? 1 : -1];
@@ -16851,28 +16851,28 @@ if test "x$with_vkd3d" != "xno"
 then
     if ${VKD3D_CFLAGS:+false} :; then :
   if ${PKG_CONFIG+:} false; then :
-  VKD3D_CFLAGS=`$PKG_CONFIG --cflags libvkd3d 2>/dev/null`
+  VKD3D_CFLAGS=`$PKG_CONFIG --cflags libvkd3d-proton 2>/dev/null`
 fi
 fi
 
 if ${VKD3D_LIBS:+false} :; then :
   if ${PKG_CONFIG+:} false; then :
-  VKD3D_LIBS=`$PKG_CONFIG --libs libvkd3d 2>/dev/null`
+  VKD3D_LIBS=`$PKG_CONFIG --libs libvkd3d-proton 2>/dev/null`
 fi
 fi
 
 
-$as_echo "$as_me:${as_lineno-$LINENO}: libvkd3d cflags: $VKD3D_CFLAGS" >&5
-$as_echo "$as_me:${as_lineno-$LINENO}: libvkd3d libs: $VKD3D_LIBS" >&5
+$as_echo "$as_me:${as_lineno-$LINENO}: libvkd3d-proton cflags: $VKD3D_CFLAGS" >&5
+$as_echo "$as_me:${as_lineno-$LINENO}: libvkd3d-proton libs: $VKD3D_LIBS" >&5
 ac_save_CPPFLAGS=$CPPFLAGS
 CPPFLAGS="$CPPFLAGS $VKD3D_CFLAGS"
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for -lvkd3d" >&5
-$as_echo_n "checking for -lvkd3d... " >&6; }
-if ${ac_cv_lib_soname_vkd3d+:} false; then :
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for -lvkd3d-proton" >&5
+$as_echo_n "checking for -lvkd3d-proton... " >&6; }
+if ${ac_cv_lib_soname_vkd3d_proton+:} false; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_soname_save_LIBS=$LIBS
-LIBS="-lvkd3d $VKD3D_LIBS $LIBS"
+LIBS="-lvkd3d-proton $VKD3D_LIBS $LIBS"
   cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -16893,30 +16893,30 @@ return vkd3d_serialize_versioned_root_signature ();
 _ACEOF
 if ac_fn_c_try_link "$LINENO"; then :
   case "$LIBEXT" in
-    dll) ac_cv_lib_soname_vkd3d=`$ac_cv_path_LDD conftest.exe | grep "vkd3d" | sed -e "s/dll.*/dll/"';2,$d'` ;;
-    dylib) ac_cv_lib_soname_vkd3d=`$OTOOL -L conftest$ac_exeext | grep "libvkd3d\\.[0-9A-Za-z.]*dylib" | sed -e "s/^.*\/\(libvkd3d\.[0-9A-Za-z.]*dylib\).*$/\1/"';2,$d'` ;;
-    *) ac_cv_lib_soname_vkd3d=`$READELF -d conftest$ac_exeext | grep "NEEDED.*libvkd3d\\.$LIBEXT" | sed -e "s/^.*\\[\\(libvkd3d\\.$LIBEXT[^	 ]*\\)\\].*$/\1/"';2,$d'`
-       if ${ac_cv_lib_soname_vkd3d:+false} :; then :
-  ac_cv_lib_soname_vkd3d=`$LDD conftest$ac_exeext | grep "libvkd3d\\.$LIBEXT" | sed -e "s/^.*\(libvkd3d\.$LIBEXT[^	 ]*\).*$/\1/"';2,$d'`
+    dll) ac_cv_lib_soname_vkd3d_proton=`$ac_cv_path_LDD conftest.exe | grep "vkd3d-proton" | sed -e "s/dll.*/dll/"';2,$d'` ;;
+    dylib) ac_cv_lib_soname_vkd3d_proton=`$OTOOL -L conftest$ac_exeext | grep "libvkd3d-proton\\.[0-9A-Za-z.]*dylib" | sed -e "s/^.*\/\(libvkd3d-proton\.[0-9A-Za-z.]*dylib\).*$/\1/"';2,$d'` ;;
+    *) ac_cv_lib_soname_vkd3d_proton=`$READELF -d conftest$ac_exeext | grep "NEEDED.*libvkd3d-proton\\.$LIBEXT" | sed -e "s/^.*\\[\\(libvkd3d-proton\\.$LIBEXT[^	 ]*\\)\\].*$/\1/"';2,$d'`
+       if ${ac_cv_lib_soname_vkd3d_proton:+false} :; then :
+  ac_cv_lib_soname_vkd3d_proton=`$LDD conftest$ac_exeext | grep "libvkd3d-proton\\.$LIBEXT" | sed -e "s/^.*\(libvkd3d-proton\.$LIBEXT[^	 ]*\).*$/\1/"';2,$d'`
 fi ;;
   esac
 else
-  ac_cv_lib_soname_vkd3d=
+  ac_cv_lib_soname_vkd3d_proton=
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
   LIBS=$ac_check_soname_save_LIBS
 fi
-if ${ac_cv_lib_soname_vkd3d:+false} :; then :
+if ${ac_cv_lib_soname_vkd3d_proton:+false} :; then :
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
 
 else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_soname_vkd3d" >&5
-$as_echo "$ac_cv_lib_soname_vkd3d" >&6; }
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_soname_vkd3d_proton" >&5
+$as_echo "$ac_cv_lib_soname_vkd3d_proton" >&6; }
 
 cat >>confdefs.h <<_ACEOF
-#define SONAME_LIBVKD3D "$ac_cv_lib_soname_vkd3d"
+#define SONAME_LIBVKD3D_PROTON "$ac_cv_lib_soname_vkd3d_proton"
 _ACEOF
 
 
@@ -16998,16 +16998,16 @@ fi
 CPPFLAGS=$ac_save_CPPFLAGS
 
 fi
-if test "x$ac_cv_lib_soname_vkd3d" = "x"; then :
-  case "x$with_vkd3d" in
-  x)   as_fn_append wine_notices "|vkd3d ${notice_platform}development files not found (or too old), Direct3D 12 won't be supported." ;;
+if test "x$ac_cv_lib_soname_vkd3d-proton" = "x"; then :
+  case "x$with_vkd3d-proton" in
+  x)   as_fn_append wine_notices "|vkd3d-proton ${notice_platform}development files not found (or too old), Direct3D 12 won't be supported." ;;
   xno) ;;
-  *)   as_fn_error $? "vkd3d ${notice_platform}development files not found (or too old), Direct3D 12 won't be supported.
-This is an error since --with-vkd3d was requested." "$LINENO" 5 ;;
+  *)   as_fn_error $? "vkd3d-proton ${notice_platform}development files not found (or too old), Direct3D 12 won't be supported.
+This is an error since --with-vkd3d-proton was requested." "$LINENO" 5 ;;
 esac
 
 fi
-test "x$ac_cv_lib_soname_vkd3d" != "x" || enable_d3d12=${enable_d3d12:-no}
+test "x$ac_cv_lib_soname_vkd3d-proton" != "x" || enable_d3d12=${enable_d3d12:-no}
 
 if test "x$with_gcrypt" != "xno"
 then
