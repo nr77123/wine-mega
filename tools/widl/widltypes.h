@@ -69,6 +69,7 @@ typedef struct list warning_list_t;
 
 enum attr_type
 {
+    ATTR_ACTIVATABLE,
     ATTR_AGGREGATABLE,
     ATTR_ALLOCATE,
     ATTR_ANNOTATION,
@@ -162,6 +163,7 @@ enum attr_type
     ATTR_RETVAL,
     ATTR_SIZEIS,
     ATTR_SOURCE,
+    ATTR_STATIC,
     ATTR_STRICTCONTEXTHANDLE,
     ATTR_STRING,
     ATTR_SWITCHIS,
@@ -384,6 +386,7 @@ struct iface_details
   struct _type_t *inherit;
   struct _type_t *disp_inherit;
   struct _type_t *async_iface;
+  type_list_t *requires;
 };
 
 struct module_details
@@ -433,6 +436,17 @@ struct runtimeclass_details
     ifref_list_t *ifaces;
 };
 
+struct parameterized_details
+{
+    type_t *type;
+    type_list_t *params;
+};
+
+struct delegate_details
+{
+    type_t *iface;
+};
+
 #define HASHMAX 64
 
 struct namespace {
@@ -461,6 +475,9 @@ enum type_type
     TYPE_BITFIELD,
     TYPE_APICONTRACT,
     TYPE_RUNTIMECLASS,
+    TYPE_PARAMETERIZED_TYPE,
+    TYPE_PARAMETER,
+    TYPE_DELEGATE,
 };
 
 struct _type_t {
@@ -482,8 +499,13 @@ struct _type_t {
     struct bitfield_details bitfield;
     struct alias_details alias;
     struct runtimeclass_details runtimeclass;
+    struct parameterized_details parameterized;
+    struct delegate_details delegate;
   } details;
   const char *c_name;
+  const char *signature;
+  const char *short_name;
+  const char *qualified_name;
   unsigned int typestring_offset;
   unsigned int ptrdesc;           /* used for complex structs */
   int typelib_idx;
@@ -638,6 +660,8 @@ void init_loc_info(loc_info_t *);
 
 char *format_namespace(struct namespace *namespace, const char *prefix, const char *separator, const char *suffix,
                        const char *abi_prefix);
+char *format_parameterized_type_name(type_t *type, type_list_t *params);
+char *format_type_signature(type_t *type);
 
 static inline enum type_type type_get_type_detect_alias(const type_t *type)
 {

@@ -68,6 +68,7 @@ static const struct object_ops ranges_ops =
     no_add_queue,              /* add_queue */
     NULL,                      /* remove_queue */
     NULL,                      /* signaled */
+    NULL,                      /* get_esync_fd */
     NULL,                      /* satisfied */
     no_signal,                 /* signal */
     no_get_fd,                 /* get_fd */
@@ -104,6 +105,7 @@ static const struct object_ops shared_map_ops =
     no_add_queue,              /* add_queue */
     NULL,                      /* remove_queue */
     NULL,                      /* signaled */
+    NULL,                      /* get_esync_fd */
     NULL,                      /* satisfied */
     no_signal,                 /* signal */
     no_get_fd,                 /* get_fd */
@@ -175,6 +177,7 @@ static const struct object_ops mapping_ops =
     no_add_queue,                /* add_queue */
     NULL,                        /* remove_queue */
     NULL,                        /* signaled */
+    NULL,                        /* get_esync_fd */
     NULL,                        /* satisfied */
     no_signal,                   /* signal */
     mapping_get_fd,              /* get_fd */
@@ -1171,6 +1174,35 @@ DECL_HANDLER(unmap_view)
     struct memory_view *view = find_mapped_view( current->process, req->base );
 
     if (view) free_memory_view( view );
+}
+
+/* get file handle from mapping by address */
+DECL_HANDLER(get_mapping_file)
+{
+    struct memory_view *view;
+    struct process *process;
+    struct file *file;
+
+    if (!(process = get_process_from_handle( req->process, PROCESS_QUERY_INFORMATION ))) return;
+
+    LIST_FOR_EACH_ENTRY( view, &process->views, struct memory_view, entry )
+        if (req->addr >= view->base && req->addr < view->base + view->size) break;
+
+    if (&view->entry == &process->views)
+    {
+        set_error( STATUS_NOT_MAPPED_VIEW );
+        release_object( process );
+        return;
+    }
+
+    if (view->fd && (file = create_file_for_fd_obj( view->fd, GENERIC_READ,
+                                                    FILE_SHARE_READ | FILE_SHARE_WRITE )))
+    {
+        reply->handle = alloc_handle( process, file, GENERIC_READ, 0 );
+        release_object( file );
+    }
+
+    release_object( process );
 }
 
 /* get a range of committed pages in a file mapping */
