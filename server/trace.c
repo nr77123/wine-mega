@@ -1424,14 +1424,12 @@ static void dump_get_startup_info_reply( const struct get_startup_info_reply *re
 
 static void dump_init_process_done_request( const struct init_process_done_request *req )
 {
-    fprintf( stderr, " gui=%d", req->gui );
-    dump_uint64( ", module=", &req->module );
-    dump_uint64( ", entry=", &req->entry );
 }
 
 static void dump_init_process_done_reply( const struct init_process_done_reply *req )
 {
-    fprintf( stderr, " suspend=%d", req->suspend );
+    dump_uint64( " entry=", &req->entry );
+    fprintf( stderr, ", suspend=%d", req->suspend );
 }
 
 static void dump_init_first_thread_request( const struct init_first_thread_request *req )
@@ -1510,7 +1508,17 @@ static void dump_get_process_info_reply( const struct get_process_info_reply *re
     fprintf( stderr, ", exit_code=%d", req->exit_code );
     fprintf( stderr, ", priority=%d", req->priority );
     dump_client_cpu( ", cpu=", &req->cpu );
-    fprintf( stderr, ", debugger_present=%d", req->debugger_present );
+    dump_varargs_pe_image_info( ", image=", cur_size );
+}
+
+static void dump_get_process_debug_info_request( const struct get_process_debug_info_request *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
+static void dump_get_process_debug_info_reply( const struct get_process_debug_info_reply *req )
+{
+    fprintf( stderr, " debug=%04x", req->debug );
     fprintf( stderr, ", debug_children=%d", req->debug_children );
     dump_varargs_pe_image_info( ", image=", cur_size );
 }
@@ -4553,6 +4561,7 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_terminate_process_request,
     (dump_func)dump_terminate_thread_request,
     (dump_func)dump_get_process_info_request,
+    (dump_func)dump_get_process_debug_info_request,
     (dump_func)dump_get_process_vm_counters_request,
     (dump_func)dump_set_process_info_request,
     (dump_func)dump_get_thread_info_request,
@@ -4841,6 +4850,7 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_terminate_process_reply,
     (dump_func)dump_terminate_thread_reply,
     (dump_func)dump_get_process_info_reply,
+    (dump_func)dump_get_process_debug_info_reply,
     (dump_func)dump_get_process_vm_counters_reply,
     NULL,
     (dump_func)dump_get_thread_info_reply,
@@ -5129,6 +5139,7 @@ static const char * const req_names[REQ_NB_REQUESTS] = {
     "terminate_process",
     "terminate_thread",
     "get_process_info",
+    "get_process_debug_info",
     "get_process_vm_counters",
     "set_process_info",
     "get_thread_info",
@@ -5514,6 +5525,7 @@ static const struct
     { "PIPE_EMPTY",                  STATUS_PIPE_EMPTY },
     { "PIPE_LISTENING",              STATUS_PIPE_LISTENING },
     { "PIPE_NOT_AVAILABLE",          STATUS_PIPE_NOT_AVAILABLE },
+    { "PORT_NOT_SET",                STATUS_PORT_NOT_SET },
     { "PRIVILEGE_NOT_HELD",          STATUS_PRIVILEGE_NOT_HELD },
     { "PROCESS_IN_JOB",              STATUS_PROCESS_IN_JOB },
     { "PROCESS_IS_TERMINATING",      STATUS_PROCESS_IS_TERMINATING },

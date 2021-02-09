@@ -1344,7 +1344,7 @@ static void test_AccessCheck(void)
          "NtAccessCheck shouldn't set last error, got %d\n", err);
       ok(Access == 0x1abe11ed && ntAccessStatus == 0x1abe11ed,
          "Access and/or AccessStatus were changed!\n");
-      todo_wine ok(ntPrivSetLen == 0, "PrivSetLen returns %d\n", ntPrivSetLen);
+      ok(ntPrivSetLen == 0, "PrivSetLen returns %d\n", ntPrivSetLen);
 
       /* Generic access mask - insufficient returnlength */
       SetLastError(0xdeadbeef);
@@ -1359,7 +1359,7 @@ static void test_AccessCheck(void)
          "NtAccessCheck shouldn't set last error, got %d\n", err);
       ok(Access == 0x1abe11ed && ntAccessStatus == 0x1abe11ed,
          "Access and/or AccessStatus were changed!\n");
-      todo_wine ok(ntPrivSetLen == sizeof(PRIVILEGE_SET)-1, "PrivSetLen returns %d\n", ntPrivSetLen);
+      ok(ntPrivSetLen == sizeof(PRIVILEGE_SET)-1, "PrivSetLen returns %d\n", ntPrivSetLen);
 
       /* Key access mask - zero returnlength */
       SetLastError(0xdeadbeef);
@@ -1368,13 +1368,13 @@ static void test_AccessCheck(void)
       ntret = pNtAccessCheck(SecurityDescriptor, Token, KEY_READ, &Mapping,
                              PrivSet, &ntPrivSetLen, &Access, &ntAccessStatus);
       err = GetLastError();
-      todo_wine ok(ntret == STATUS_BUFFER_TOO_SMALL,
+      ok(ntret == STATUS_BUFFER_TOO_SMALL,
          "NtAccessCheck should have failed with STATUS_BUFFER_TOO_SMALL, got %x\n", ntret);
       ok(err == 0xdeadbeef,
          "NtAccessCheck shouldn't set last error, got %d\n", err);
-      todo_wine ok(Access == 0x1abe11ed && ntAccessStatus == 0x1abe11ed,
+      ok(Access == 0x1abe11ed && ntAccessStatus == 0x1abe11ed,
          "Access and/or AccessStatus were changed!\n");
-      todo_wine ok(ntPrivSetLen == sizeof(PRIVILEGE_SET), "PrivSetLen returns %d\n", ntPrivSetLen);
+      ok(ntPrivSetLen == sizeof(PRIVILEGE_SET), "PrivSetLen returns %d\n", ntPrivSetLen);
 
       /* Key access mask - insufficient returnlength */
       SetLastError(0xdeadbeef);
@@ -1383,13 +1383,13 @@ static void test_AccessCheck(void)
       ntret = pNtAccessCheck(SecurityDescriptor, Token, KEY_READ, &Mapping,
                              PrivSet, &ntPrivSetLen, &Access, &ntAccessStatus);
       err = GetLastError();
-      todo_wine ok(ntret == STATUS_BUFFER_TOO_SMALL,
+      ok(ntret == STATUS_BUFFER_TOO_SMALL,
          "NtAccessCheck should have failed with STATUS_BUFFER_TOO_SMALL, got %x\n", ntret);
       ok(err == 0xdeadbeef,
          "NtAccessCheck shouldn't set last error, got %d\n", err);
-      todo_wine ok(Access == 0x1abe11ed && ntAccessStatus == 0x1abe11ed,
+      ok(Access == 0x1abe11ed && ntAccessStatus == 0x1abe11ed,
          "Access and/or AccessStatus were changed!\n");
-      todo_wine ok(ntPrivSetLen == sizeof(PRIVILEGE_SET), "PrivSetLen returns %d\n", ntPrivSetLen);
+      ok(ntPrivSetLen == sizeof(PRIVILEGE_SET), "PrivSetLen returns %d\n", ntPrivSetLen);
     }
     else
        win_skip("NtAccessCheck unavailable. Skipping.\n");
@@ -1528,12 +1528,9 @@ static void test_AccessCheck(void)
     ret = AccessCheck(SecurityDescriptor, Token, KEY_READ, &Mapping,
                       PrivSet, &PrivSetLen, &Access, &AccessStatus);
     err = GetLastError();
-todo_wine
     ok(!ret && err == ERROR_INSUFFICIENT_BUFFER, "AccessCheck should have "
        "failed with ERROR_INSUFFICIENT_BUFFER, instead of %d\n", err);
-todo_wine
     ok(PrivSetLen == sizeof(PRIVILEGE_SET), "PrivSetLen returns %d\n", PrivSetLen);
-todo_wine
     ok(Access == 0x1abe11ed && AccessStatus == 0x1abe11ed,
        "Access and/or AccessStatus were changed!\n");
 
@@ -1541,16 +1538,16 @@ todo_wine
     SetLastError(0xdeadbeef);
     Access = AccessStatus = 0x1abe11ed;
     PrivSetLen = sizeof(PRIVILEGE_SET) - 1;
+    PrivSet->PrivilegeCount = 0xdeadbeef;
     ret = AccessCheck(SecurityDescriptor, Token, KEY_READ, &Mapping,
                       PrivSet, &PrivSetLen, &Access, &AccessStatus);
     err = GetLastError();
-todo_wine
     ok(!ret && err == ERROR_INSUFFICIENT_BUFFER, "AccessCheck should have "
        "failed with ERROR_INSUFFICIENT_BUFFER, instead of %d\n", err);
-todo_wine
     ok(PrivSetLen == sizeof(PRIVILEGE_SET), "PrivSetLen returns %d\n", PrivSetLen);
     ok(Access == 0x1abe11ed && AccessStatus == 0x1abe11ed,
        "Access and/or AccessStatus were changed!\n");
+    ok(PrivSet->PrivilegeCount == 0xdeadbeef, "buffer contents should not be changed\n");
 
     /* Valid PrivSet with minimal sufficient PrivSetLen */
     SetLastError(0xdeadbeef);
@@ -1561,7 +1558,6 @@ todo_wine
                       PrivSet, &PrivSetLen, &Access, &AccessStatus);
     err = GetLastError();
     ok(ret, "AccessCheck failed with error %d\n", GetLastError());
-todo_wine
     ok(PrivSetLen == sizeof(PRIVILEGE_SET), "PrivSetLen returns %d\n", PrivSetLen);
     ok(AccessStatus && (Access == KEY_READ),
         "AccessCheck failed to grant access with error %d\n", GetLastError());
@@ -1641,12 +1637,9 @@ todo_wine
         ret = AccessCheck(SecurityDescriptor, Token, KEY_READ, &Mapping,
                           PrivSet, &PrivSetLen, &Access, &AccessStatus);
         err = GetLastError();
-    todo_wine
         ok(!ret && err == ERROR_INSUFFICIENT_BUFFER, "AccessCheck should have "
            "failed with ERROR_INSUFFICIENT_BUFFER, instead of %d\n", err);
-    todo_wine
         ok(PrivSetLen == sizeof(PRIVILEGE_SET), "PrivSetLen returns %d\n", PrivSetLen);
-    todo_wine
         ok(Access == 0x1abe11ed && AccessStatus == 0x1abe11ed,
            "Access and/or AccessStatus were changed!\n");
 
@@ -8050,6 +8043,37 @@ static void test_pseudo_handle_security(void)
     }
 }
 
+static void test_duplicate_token(void)
+{
+    HANDLE token, token2;
+    BOOL ret;
+
+    ret = OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT, &token);
+    ok(ret, "got error %u\n", GetLastError());
+
+    ret = DuplicateToken(token, SecurityAnonymous, &token2);
+    ok(ret, "got error %u\n", GetLastError());
+    TEST_GRANTED_ACCESS(token2, TOKEN_QUERY | TOKEN_IMPERSONATE);
+    CloseHandle(token2);
+
+    ret = DuplicateTokenEx(token, 0, NULL, SecurityAnonymous, TokenPrimary, &token2);
+    ok(ret, "got error %u\n", GetLastError());
+    TEST_GRANTED_ACCESS(token2, TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ADJUST_DEFAULT);
+    CloseHandle(token2);
+
+    ret = DuplicateTokenEx(token, MAXIMUM_ALLOWED, NULL, SecurityAnonymous, TokenPrimary, &token2);
+    ok(ret, "got error %u\n", GetLastError());
+    TEST_GRANTED_ACCESS(token2, TOKEN_ALL_ACCESS);
+    CloseHandle(token2);
+
+    ret = DuplicateTokenEx(token, TOKEN_QUERY_SOURCE, NULL, SecurityAnonymous, TokenPrimary, &token2);
+    ok(ret, "got error %u\n", GetLastError());
+    TEST_GRANTED_ACCESS(token2, TOKEN_QUERY_SOURCE);
+    CloseHandle(token2);
+
+    CloseHandle(token);
+}
+
 START_TEST(security)
 {
     init();
@@ -8113,6 +8137,7 @@ START_TEST(security)
     test_duplicate_handle_access();
     test_create_process_token();
     test_pseudo_handle_security();
+    test_duplicate_token();
 
     /* Must be the last test, modifies process token */
     test_token_security_descriptor();

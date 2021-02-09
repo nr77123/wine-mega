@@ -130,6 +130,7 @@ DECL_HANDLER(init_thread);
 DECL_HANDLER(terminate_process);
 DECL_HANDLER(terminate_thread);
 DECL_HANDLER(get_process_info);
+DECL_HANDLER(get_process_debug_info);
 DECL_HANDLER(get_process_vm_counters);
 DECL_HANDLER(set_process_info);
 DECL_HANDLER(get_thread_info);
@@ -421,6 +422,7 @@ static const req_handler req_handlers[REQ_NB_REQUESTS] =
     (req_handler)req_terminate_process,
     (req_handler)req_terminate_thread,
     (req_handler)req_get_process_info,
+    (req_handler)req_get_process_debug_info,
     (req_handler)req_get_process_vm_counters,
     (req_handler)req_set_process_info,
     (req_handler)req_get_thread_info,
@@ -762,12 +764,10 @@ C_ASSERT( sizeof(struct new_thread_reply) == 16 );
 C_ASSERT( sizeof(struct get_startup_info_request) == 16 );
 C_ASSERT( FIELD_OFFSET(struct get_startup_info_reply, info_size) == 8 );
 C_ASSERT( sizeof(struct get_startup_info_reply) == 16 );
-C_ASSERT( FIELD_OFFSET(struct init_process_done_request, gui) == 12 );
-C_ASSERT( FIELD_OFFSET(struct init_process_done_request, module) == 16 );
-C_ASSERT( FIELD_OFFSET(struct init_process_done_request, entry) == 24 );
-C_ASSERT( sizeof(struct init_process_done_request) == 32 );
-C_ASSERT( FIELD_OFFSET(struct init_process_done_reply, suspend) == 8 );
-C_ASSERT( sizeof(struct init_process_done_reply) == 16 );
+C_ASSERT( sizeof(struct init_process_done_request) == 16 );
+C_ASSERT( FIELD_OFFSET(struct init_process_done_reply, entry) == 8 );
+C_ASSERT( FIELD_OFFSET(struct init_process_done_reply, suspend) == 16 );
+C_ASSERT( sizeof(struct init_process_done_reply) == 24 );
 C_ASSERT( FIELD_OFFSET(struct init_first_thread_request, unix_pid) == 12 );
 C_ASSERT( FIELD_OFFSET(struct init_first_thread_request, unix_tid) == 16 );
 C_ASSERT( FIELD_OFFSET(struct init_first_thread_request, debug_level) == 20 );
@@ -815,9 +815,12 @@ C_ASSERT( FIELD_OFFSET(struct get_process_info_reply, end_time) == 40 );
 C_ASSERT( FIELD_OFFSET(struct get_process_info_reply, exit_code) == 48 );
 C_ASSERT( FIELD_OFFSET(struct get_process_info_reply, priority) == 52 );
 C_ASSERT( FIELD_OFFSET(struct get_process_info_reply, cpu) == 56 );
-C_ASSERT( FIELD_OFFSET(struct get_process_info_reply, debugger_present) == 60 );
-C_ASSERT( FIELD_OFFSET(struct get_process_info_reply, debug_children) == 62 );
 C_ASSERT( sizeof(struct get_process_info_reply) == 64 );
+C_ASSERT( FIELD_OFFSET(struct get_process_debug_info_request, handle) == 12 );
+C_ASSERT( sizeof(struct get_process_debug_info_request) == 16 );
+C_ASSERT( FIELD_OFFSET(struct get_process_debug_info_reply, debug) == 8 );
+C_ASSERT( FIELD_OFFSET(struct get_process_debug_info_reply, debug_children) == 12 );
+C_ASSERT( sizeof(struct get_process_debug_info_reply) == 16 );
 C_ASSERT( FIELD_OFFSET(struct get_process_vm_counters_request, handle) == 12 );
 C_ASSERT( sizeof(struct get_process_vm_counters_request) == 16 );
 C_ASSERT( FIELD_OFFSET(struct get_process_vm_counters_reply, peak_virtual_size) == 8 );
