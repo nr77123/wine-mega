@@ -50,9 +50,7 @@ static void CALLBACK perform_cb(TP_CALLBACK_INSTANCE *instance, void *user)
 {
     struct cb_data *cbdata = user;
 
-    if (cbdata->type < GSTDEMUX_MAX)
-        perform_cb_gstdemux(cbdata);
-    else if (cbdata->type < MEDIA_SOURCE_MAX)
+    if (cbdata->type < MEDIA_SOURCE_MAX)
         perform_cb_media_source(cbdata);
     else if (cbdata->type < MF_DECODE_MAX)
         perform_cb_mf_decode(cbdata);
@@ -61,7 +59,6 @@ static void CALLBACK perform_cb(TP_CALLBACK_INSTANCE *instance, void *user)
         fprintf(stderr, "No handler registered for callback\n");
         assert(0);
     }
-
 
     pthread_mutex_lock(&cbdata->lock);
     cbdata->finished = 1;
@@ -145,30 +142,6 @@ static void call_cb(struct cb_data *cbdata)
 
     pthread_cond_destroy(&cbdata->cond);
     pthread_mutex_destroy(&cbdata->lock);
-}
-
-void existing_new_pad_wrapper(GstElement *bin, GstPad *pad, gpointer user)
-{
-    struct cb_data cbdata = { EXISTING_NEW_PAD };
-
-    cbdata.u.pad_added_data.element = bin;
-    cbdata.u.pad_added_data.pad = pad;
-    cbdata.u.pad_added_data.user = user;
-
-    call_cb(&cbdata);
-}
-
-gboolean query_sink_wrapper(GstPad *pad, GstObject *parent, GstQuery *query)
-{
-    struct cb_data cbdata = { QUERY_SINK };
-
-    cbdata.u.query_sink_data.pad = pad;
-    cbdata.u.query_sink_data.parent = parent;
-    cbdata.u.query_sink_data.query = query;
-
-    call_cb(&cbdata);
-
-    return cbdata.u.query_sink_data.ret;
 }
 
 GstFlowReturn bytestream_wrapper_pull_wrapper(GstPad *pad, GstObject *parent, guint64 ofs, guint len,

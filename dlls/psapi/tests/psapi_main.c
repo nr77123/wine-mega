@@ -488,18 +488,18 @@ static void test_GetMappedFileName(void)
     ret = GetMappedFileNameA(GetCurrentProcess(), base, map_name, sizeof(map_name));
     ok(ret, "GetMappedFileName error %d\n", GetLastError());
     ok(ret > strlen(device_name), "map_name should be longer than device_name\n");
+    todo_wine
     ok(memcmp(map_name, device_name, strlen(device_name)) == 0, "map name does not start with a device name: %s\n", map_name);
 
     SetLastError(0xdeadbeef);
     ret = GetMappedFileNameW(GetCurrentProcess(), base, map_nameW, ARRAY_SIZE(map_nameW));
-todo_wine {
     ok(ret, "GetMappedFileNameW error %d\n", GetLastError());
     ok(ret > strlen(device_name), "map_name should be longer than device_name\n");
-}
     if (nt_get_mapped_file_name(GetCurrentProcess(), base, nt_map_name, ARRAY_SIZE(nt_map_name)))
     {
         ok(memcmp(map_nameW, nt_map_name, lstrlenW(map_nameW)) == 0, "map name does not start with a device name: %s\n", map_name);
         WideCharToMultiByte(CP_ACP, 0, map_nameW, -1, map_name, MAX_PATH, NULL, NULL);
+        todo_wine
         ok(memcmp(map_name, device_name, strlen(device_name)) == 0, "map name does not start with a device name: %s\n", map_name);
     }
 
@@ -519,6 +519,7 @@ todo_wine {
     ret = GetMappedFileNameA(GetCurrentProcess(), base + 0x2000, map_name, sizeof(map_name));
     ok(ret, "GetMappedFileName error %d\n", GetLastError());
     ok(ret > strlen(device_name), "map_name should be longer than device_name\n");
+    todo_wine
     ok(memcmp(map_name, device_name, strlen(device_name)) == 0, "map name does not start with a device name: %s\n", map_name);
 
     SetLastError(0xdeadbeef);
@@ -529,7 +530,6 @@ todo_wine {
     SetLastError(0xdeadbeef);
     ret = GetMappedFileNameA(GetCurrentProcess(), NULL, map_name, sizeof(map_name));
     ok(!ret, "GetMappedFileName should fail\n");
-todo_wine
     ok(GetLastError() == ERROR_UNEXP_NET_ERR, "expected ERROR_UNEXP_NET_ERR, got %d\n", GetLastError());
 
     SetLastError(0xdeadbeef);
@@ -575,11 +575,7 @@ static void test_GetProcessImageFileName(void)
 	    win_skip("GetProcessImageFileName not implemented\n");
             return;
         }
-
-        if(GetLastError() == 0xdeadbeef)
-	    todo_wine ok(0, "failed without error code\n");
-	else
-	    todo_wine ok(0, "failed with %d\n", GetLastError());
+        ok(0, "failed with %d\n", GetLastError());
     }
 
     SetLastError(0xdeadbeef);

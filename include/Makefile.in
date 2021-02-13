@@ -601,6 +601,7 @@ SOURCES = \
 	raserror.h \
 	reason.h \
 	regstr.h \
+	relogger.idl \
 	restartmanager.h \
 	restrictederrorinfo.idl \
 	richedit.h \

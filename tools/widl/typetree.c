@@ -250,9 +250,11 @@ static size_t append_type_signature(char **buf, size_t *len, size_t pos, type_t 
 
 char *format_namespace(struct namespace *namespace, const char *prefix, const char *separator, const char *suffix, const char *abi_prefix)
 {
-    size_t len = 0;
+    size_t len = 0, pos = 0;
     char *buf = NULL;
-    append_namespaces(&buf, &len, 0, namespace, prefix, separator, suffix, abi_prefix);
+    pos += strappend(&buf, &len, pos, "%s", prefix);
+    pos += append_namespace(&buf, &len, pos, namespace, separator, abi_prefix);
+    pos += strappend(&buf, &len, pos, "%s", suffix);
     return buf;
 }
 
@@ -351,8 +353,7 @@ static char *format_parameterized_type_short_name(type_t *type, type_list_t *par
         for (type = entry->type; type->type_type == TYPE_POINTER; type = type_pointer_get_ref_type(type)) {}
         pos += strappend(&buf, &len, pos, "_%s", type->name);
     }
-
-    return buf;
+	return buf;
 }
 
 type_t *type_new_function(var_list_t *args)
@@ -670,7 +671,7 @@ type_t *type_interface_declare(char *name, struct namespace *namespace)
     return type;
 }
 
-type_t *type_interface_define(type_t *iface, attr_list_t *attrs, type_t *inherit, statement_list_t *stmts, type_list_t *requires)
+type_t *type_interface_define(type_t *iface, attr_list_t *attrs, type_t *inherit, statement_list_t *stmts, ifref_list_t *requires)
 {
     if (iface->defined)
         error_loc("interface %s already defined at %s:%d\n",
@@ -793,6 +794,9 @@ type_t *type_runtimeclass_declare(char *name, struct namespace *namespace)
 
 type_t *type_runtimeclass_define(type_t *runtimeclass, attr_list_t *attrs, ifref_list_t *ifaces)
 {
+    ifref_t *ifref, *required, *tmp;
+    ifref_list_t *requires;
+
     if (runtimeclass->defined)
         error_loc("runtimeclass %s already defined at %s:%d\n",
                   runtimeclass->name, runtimeclass->loc_info.input_name, runtimeclass->loc_info.line_number);
@@ -801,6 +805,28 @@ type_t *type_runtimeclass_define(type_t *runtimeclass, attr_list_t *attrs, ifref
     runtimeclass->defined = TRUE;
     if (!type_runtimeclass_get_default_iface(runtimeclass))
         error_loc("missing default interface on runtimeclass %s\n", runtimeclass->name);
+
+    LIST_FOR_EACH_ENTRY(ifref, ifaces, ifref_t, entry)
+    {
+        /* FIXME: this should probably not be allowed, here or in coclass, */
+        /* but for now there's too many places in Wine IDL where it is to */
+        /* even print a warning. */
+        if (!(ifref->iface->defined)) continue;
+        if (!(requires = type_iface_get_requires(ifref->iface))) continue;
+        LIST_FOR_EACH_ENTRY(required, requires, ifref_t, entry)
+        {
+            int found = 0;
+
+            LIST_FOR_EACH_ENTRY(tmp, ifaces, ifref_t, entry)
+                if ((found = type_is_equal(tmp->iface, required->iface))) break;
+
+            if (!found)
+                error_loc("interface '%s' also requires interface '%s', "
+                          "but runtimeclass '%s' does not implement it.\n",
+                          ifref->iface->name, required->iface->name, runtimeclass->name);
+        }
+    }
+
     return runtimeclass;
 }
 
@@ -884,7 +910,7 @@ type_t *type_parameterized_interface_declare(char *name, struct namespace *names
     return type;
 }
 
-type_t *type_parameterized_interface_define(type_t *type, attr_list_t *attrs, type_t *inherit, statement_list_t *stmts, type_list_t *requires)
+type_t *type_parameterized_interface_define(type_t *type, attr_list_t *attrs, type_t *inherit, statement_list_t *stmts, ifref_list_t *requires)
 {
     type_t *iface;
     if (type->defined)
@@ -1240,7 +1266,11 @@ type_t *type_parameterized_type_specialize_define(type_t *type, type_list_t *par
 
 int type_is_equal(const type_t *type1, const type_t *type2)
 {
+    if (type1 == type2)
+        return TRUE;
     if (type_get_type_detect_alias(type1) != type_get_type_detect_alias(type2))
+        return FALSE;
+    if (type1->namespace != type2->namespace)
         return FALSE;
 
     if (type1->name && type2->name)

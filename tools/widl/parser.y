@@ -133,7 +133,7 @@ static typelib_t *current_typelib;
 	expr_t *expr;
 	expr_list_t *expr_list;
 	type_t *type;
-	type_list_t *typelist;
+	type_list_t *type_list;
 	var_t *var;
 	var_list_t *var_list;
 	declarator_t *declarator;
@@ -300,12 +300,12 @@ static typelib_t *current_typelib;
 %type <type> enumdef structdef uniondef typedecl
 %type <type> type unqualified_type qualified_type
 %type <type> type_parameter
-%type <typelist> type_parameters
+%type <type_list> type_parameters
 %type <type> parameterized_type
-%type <typelist> parameterized_types
-%type <typelist> requires required_types
+%type <type_list> parameterized_types
 %type <ifref> class_interface
 %type <ifref_list> class_interfaces
+%type <ifref_list> requires required_types
 %type <var> arg ne_union_field union_field s_field case enum enum_member declaration
 %type <var> funcdef
 %type <var_list> m_args arg_list args dispint_meths
@@ -370,18 +370,19 @@ input: gbl_statements m_acf			{ $1 = append_parameterized_type_stmts($1);
 m_acf: /* empty */ | aACF acf_statements
 
 decl_statements:				{ $$ = NULL; }
-	| decl_statements tINTERFACE qualified_type '<' parameterized_types '>' ';'
-						{ parameterized_type_stmts = append_statement(parameterized_type_stmts, make_statement_parameterized_type($3, $5));
-						  $$ = append_statement($1, make_statement_reference(type_parameterized_type_specialize_declare($3, $5)));
-						}
-	;
+       | decl_statements tINTERFACE qualified_type '<' parameterized_types '>' ';'
+                                               { parameterized_type_stmts = append_statement(parameterized_type_stmts, make_statement_parameterized_type($3, $5));
+                                                 $$ = append_statement($1, make_statement_reference(type_parameterized_type_specialize_declare($3, $5)));
+                                               }
+       ;
 
 decl_block: tDECLARE '{' decl_statements '}' { $$ = $3; }
 
 imp_decl_statements:				{ $$ = NULL; }
-	| imp_decl_statements tINTERFACE qualified_type '<' parameterized_types '>' ';'
-						{ $$ = append_statement($1, make_statement_reference(type_parameterized_type_specialize_declare($3, $5))); }
-	;
+       | imp_decl_statements tINTERFACE qualified_type '<' parameterized_types '>' ';'
+                                               { $$ = append_statement($1, make_statement_reference(type_parameterized_type_specialize_declare($3, $5))); }
+       ;
+
 
 imp_decl_block: tDECLARE '{' imp_decl_statements '}' { $$ = $3; }
 
@@ -943,18 +944,18 @@ qualified_type:
 	;
 
 parameterized_type: qualified_type '<' parameterized_types '>'
-						{ $$ = find_parameterized_type($1, $3); }
-	;
+                                               { $$ = find_parameterized_type($1, $3); }
+       ;
 
 parameterized_types:
-	  base_type				{ $$ = append_type(NULL, $1); }
-	| qualified_type			{ $$ = append_type(NULL, $1); }
-	| qualified_type '*'			{ $$ = append_type(NULL, type_new_pointer($1)); }
-	| parameterized_type			{ $$ = append_type(NULL, $1); }
-	| parameterized_type '*'		{ $$ = append_type(NULL, type_new_pointer($1)); }
-	| parameterized_types ',' parameterized_types
-						{ $$ = append_types($1, $3); }
-	;
+         base_type                             { $$ = append_type(NULL, $1); }
+       | qualified_type                        { $$ = append_type(NULL, $1); }
+       | qualified_type '*'                    { $$ = append_type(NULL, type_new_pointer($1)); }
+       | parameterized_type                    { $$ = append_type(NULL, $1); }
+       | parameterized_type '*'                { $$ = append_type(NULL, type_new_pointer($1)); }
+       | parameterized_types ',' parameterized_types
+                                               { $$ = append_types($1, $3); }
+       ;
 
 coclass:  tCOCLASS typename			{ $$ = type_coclass_declare($2); }
 	;
@@ -1012,7 +1013,7 @@ dispinterfacedef:
 
 inherit:					{ $$ = NULL; }
 	| ':' qualified_type                    { $$ = $2; }
-	| ':' parameterized_type		{ $$ = $2; }
+	| ':' parameterized_type                { $$ = $2; }
 	;
 
 type_parameter: typename			{ $$ = get_type(TYPE_PARAMETER, $1, parameters_namespace, 0); }
@@ -1042,9 +1043,9 @@ delegatedef: m_attributes tDELEGATE type ident '(' m_args ')' semicolon_opt
 	;
 
 required_types:
-	  qualified_type			{ $$ = append_type(NULL, $1); }
-	| parameterized_type			{ $$ = append_type(NULL, $1); }
-	| required_types ',' required_types	{ $$ = append_types($1, $3); }
+	  qualified_type			{ $$ = append_ifref(NULL, make_ifref($1)); }
+	| parameterized_type		{ $$ = append_ifref(NULL, make_ifref($1)); }
+	| required_types ',' required_types	{ $$ = append_ifref($1, make_ifref($3)); }
 
 requires:					{ $$ = NULL; }
 	| tREQUIRES required_types		{ $$ = $2; }
@@ -1268,7 +1269,7 @@ unqualified_type:
 type:
 	  unqualified_type
 	| namespace_pfx typename		{ $$ = find_type_or_error($1, $2); }
-	| parameterized_type			{ $$ = $1; }
+	| parameterized_type                    { $$ = $1; }
 	;
 
 typedef: m_attributes tTYPEDEF m_attributes decl_spec declarator_list

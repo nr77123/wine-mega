@@ -1047,6 +1047,23 @@ struct get_process_debug_info_reply
 
 
 
+struct get_process_image_name_request
+{
+    struct request_header __header;
+    obj_handle_t handle;
+    int          win32;
+    char __pad_20[4];
+};
+struct get_process_image_name_reply
+{
+    struct reply_header __header;
+    data_size_t  len;
+    /* VARARG(name,unicode_str); */
+    char __pad_12[4];
+};
+
+
+
 struct get_process_vm_counters_request
 {
     struct request_header __header;
@@ -1149,23 +1166,6 @@ struct set_thread_info_reply
 
 
 
-struct get_dll_info_request
-{
-    struct request_header __header;
-    obj_handle_t handle;
-    mod_handle_t base_address;
-};
-struct get_dll_info_reply
-{
-    struct reply_header __header;
-    client_ptr_t entry_point;
-    data_size_t  filename_len;
-    /* VARARG(filename,unicode_str); */
-    char __pad_20[4];
-};
-
-
-
 struct suspend_thread_request
 {
     struct request_header __header;
@@ -1190,34 +1190,6 @@ struct resume_thread_reply
     struct reply_header __header;
     int          count;
     char __pad_12[4];
-};
-
-
-
-struct load_dll_request
-{
-    struct request_header __header;
-    char __pad_12[4];
-    mod_handle_t base;
-    client_ptr_t name;
-    /* VARARG(filename,unicode_str); */
-};
-struct load_dll_reply
-{
-    struct reply_header __header;
-};
-
-
-
-struct unload_dll_request
-{
-    struct request_header __header;
-    char __pad_12[4];
-    mod_handle_t base;
-};
-struct unload_dll_reply
-{
-    struct reply_header __header;
 };
 
 
@@ -2052,6 +2024,22 @@ struct is_same_mapping_request
 struct is_same_mapping_reply
 {
     struct reply_header __header;
+};
+
+
+
+struct get_mapping_filename_request
+{
+    struct request_header __header;
+    obj_handle_t process;
+    client_ptr_t addr;
+};
+struct get_mapping_filename_reply
+{
+    struct reply_header __header;
+    data_size_t  len;
+    /* VARARG(filename,unicode_str); */
+    char __pad_12[4];
 };
 
 
@@ -5184,10 +5172,11 @@ struct set_fd_name_info_request
     struct request_header __header;
     obj_handle_t handle;
     obj_handle_t rootdir;
+    data_size_t  namelen;
     int          link;
     int          replace;
+    /* VARARG(name,unicode_str,namelen); */
     /* VARARG(filename,string); */
-    char __pad_28[4];
 };
 struct set_fd_name_info_reply
 {
@@ -5593,16 +5582,14 @@ enum request
     REQ_terminate_thread,
     REQ_get_process_info,
     REQ_get_process_debug_info,
+    REQ_get_process_image_name,
     REQ_get_process_vm_counters,
     REQ_set_process_info,
     REQ_get_thread_info,
     REQ_get_thread_times,
     REQ_set_thread_info,
-    REQ_get_dll_info,
     REQ_suspend_thread,
     REQ_resume_thread,
-    REQ_load_dll,
-    REQ_unload_dll,
     REQ_queue_apc,
     REQ_get_apc_result,
     REQ_close_handle,
@@ -5654,6 +5641,7 @@ enum request
     REQ_get_mapping_committed_range,
     REQ_add_mapping_committed_range,
     REQ_is_same_mapping,
+    REQ_get_mapping_filename,
     REQ_list_processes,
     REQ_create_debug_obj,
     REQ_wait_debug_event,
@@ -5886,16 +5874,14 @@ union generic_request
     struct terminate_thread_request terminate_thread_request;
     struct get_process_info_request get_process_info_request;
     struct get_process_debug_info_request get_process_debug_info_request;
+    struct get_process_image_name_request get_process_image_name_request;
     struct get_process_vm_counters_request get_process_vm_counters_request;
     struct set_process_info_request set_process_info_request;
     struct get_thread_info_request get_thread_info_request;
     struct get_thread_times_request get_thread_times_request;
     struct set_thread_info_request set_thread_info_request;
-    struct get_dll_info_request get_dll_info_request;
     struct suspend_thread_request suspend_thread_request;
     struct resume_thread_request resume_thread_request;
-    struct load_dll_request load_dll_request;
-    struct unload_dll_request unload_dll_request;
     struct queue_apc_request queue_apc_request;
     struct get_apc_result_request get_apc_result_request;
     struct close_handle_request close_handle_request;
@@ -5947,6 +5933,7 @@ union generic_request
     struct get_mapping_committed_range_request get_mapping_committed_range_request;
     struct add_mapping_committed_range_request add_mapping_committed_range_request;
     struct is_same_mapping_request is_same_mapping_request;
+    struct get_mapping_filename_request get_mapping_filename_request;
     struct list_processes_request list_processes_request;
     struct create_debug_obj_request create_debug_obj_request;
     struct wait_debug_event_request wait_debug_event_request;
@@ -6177,16 +6164,14 @@ union generic_reply
     struct terminate_thread_reply terminate_thread_reply;
     struct get_process_info_reply get_process_info_reply;
     struct get_process_debug_info_reply get_process_debug_info_reply;
+    struct get_process_image_name_reply get_process_image_name_reply;
     struct get_process_vm_counters_reply get_process_vm_counters_reply;
     struct set_process_info_reply set_process_info_reply;
     struct get_thread_info_reply get_thread_info_reply;
     struct get_thread_times_reply get_thread_times_reply;
     struct set_thread_info_reply set_thread_info_reply;
-    struct get_dll_info_reply get_dll_info_reply;
     struct suspend_thread_reply suspend_thread_reply;
     struct resume_thread_reply resume_thread_reply;
-    struct load_dll_reply load_dll_reply;
-    struct unload_dll_reply unload_dll_reply;
     struct queue_apc_reply queue_apc_reply;
     struct get_apc_result_reply get_apc_result_reply;
     struct close_handle_reply close_handle_reply;
@@ -6238,6 +6223,7 @@ union generic_reply
     struct get_mapping_committed_range_reply get_mapping_committed_range_reply;
     struct add_mapping_committed_range_reply add_mapping_committed_range_reply;
     struct is_same_mapping_reply is_same_mapping_reply;
+    struct get_mapping_filename_reply get_mapping_filename_reply;
     struct list_processes_reply list_processes_reply;
     struct create_debug_obj_reply create_debug_obj_reply;
     struct wait_debug_event_reply wait_debug_event_reply;
@@ -6455,7 +6441,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 670
+#define SERVER_PROTOCOL_VERSION 674
 
 /* ### protocol_version end ### */
 

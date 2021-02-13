@@ -1927,7 +1927,7 @@ static NTSTATUS map_file_into_view( struct file_view *view, int fd, size_t start
     /* only try mmap if media is not removable (or if we require write access) */
     if (!removable || (flags & MAP_SHARED))
     {
-        if (mmap( (char *)view->base + start, size, prot, flags, fd, offset ) != (void *)-1)
+        if (mmap( (char *)view->base + start, size, prot, flags, fd, offset ) != MAP_FAILED)
             goto done;
 
         switch (errno)
@@ -2090,7 +2090,7 @@ static NTSTATUS map_pe_header( void *ptr, size_t size, int fd, BOOL *removable )
 
     if (!*removable)
     {
-        if (mmap( ptr, size, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_FIXED|MAP_PRIVATE, fd, 0 ) != (void *)-1)
+        if (mmap( ptr, size, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_FIXED|MAP_PRIVATE, fd, 0 ) != MAP_FAILED)
             return STATUS_SUCCESS;
 
         switch (errno)
@@ -4074,126 +4074,36 @@ static char *replace_wine_dir_with_system_dir( char *name )
     return name;
 }
 
-/* get file name for mapped section */
-static NTSTATUS get_section_name( HANDLE process, LPCVOID addr,
-                                  MEMORY_SECTION_NAME *info,
-                                  SIZE_T len, SIZE_T *res_len )
+static NTSTATUS get_memory_section_name( HANDLE process, LPCVOID addr,
+                                         MEMORY_SECTION_NAME *info, SIZE_T len, SIZE_T *ret_len )
 {
-    static const WCHAR dosprefixW[] = {'\\','?','?','\\'};
-    WCHAR symlinkW[MAX_DIR_ENTRY_LEN] = {0};
-    UNICODE_STRING nt_name, dos_path_name;
-    WCHAR *nt_nameW;
-    char *unix_name;
-    data_size_t size = 1024;
-    WCHAR *ptr, *name = NULL;
     NTSTATUS status;
-    HANDLE mapping;
-    size_t offset = 0;
 
-    if (!addr || !info || !res_len) return STATUS_INVALID_PARAMETER;
+    if (!info) return STATUS_ACCESS_VIOLATION;
 
-    SERVER_START_REQ( get_mapping_file )
+    SERVER_START_REQ( get_mapping_filename )
     {
         req->process = wine_server_obj_handle( process );
         req->addr = wine_server_client_ptr( addr );
+        if (len > sizeof(*info) + sizeof(WCHAR))
+            wine_server_set_reply( req, info + 1, len - sizeof(*info) - sizeof(WCHAR) );
         status = wine_server_call( req );
-        mapping = wine_server_ptr_handle( reply->handle );
+        if (!status || status == STATUS_BUFFER_OVERFLOW)
+        {
+            if (ret_len) *ret_len = sizeof(*info) + reply->len + sizeof(WCHAR);
+            if (len < sizeof(*info)) status = STATUS_INFO_LENGTH_MISMATCH;
+            if (!status)
+            {
+                info->SectionFileName.Buffer = (WCHAR *)(info + 1);
+                info->SectionFileName.Length = reply->len;
+                info->SectionFileName.MaximumLength = reply->len + sizeof(WCHAR);
+                info->SectionFileName.Buffer[reply->len / sizeof(WCHAR)] = 0;
+            }
+        }
     }
     SERVER_END_REQ;
-
-    memset( &nt_name, 0, sizeof(nt_name) );
-
-    if (!status && mapping)
-    {
-        status = server_get_unix_name( mapping, &unix_name, FALSE );
-        NtClose( mapping );
-        if (!status)
-        {
-            unix_name = replace_wine_dir_with_system_dir( unix_name );
-            status = unix_to_nt_file_name( unix_name, &nt_nameW );
-            free( unix_name );
-        }
-        if (!status)
-        {
-            nt_name.Buffer = nt_nameW;
-            goto found;
-        }
-        if (status == STATUS_OBJECT_TYPE_MISMATCH) status = STATUS_FILE_INVALID;
-        return status;
-    }
-
-    for (;;)
-    {
-        if (!(name = malloc( (size + 1) * sizeof(WCHAR) )))
-            return STATUS_NO_MEMORY;
-
-        SERVER_START_REQ( get_dll_info )
-        {
-            req->handle = wine_server_obj_handle( process );
-            req->base_address = (ULONG_PTR)addr;
-            wine_server_set_reply( req, name, size * sizeof(WCHAR) );
-            status = wine_server_call( req );
-            size = reply->filename_len / sizeof(WCHAR);
-        }
-        SERVER_END_REQ;
-
-        if (!status)
-        {
-            name[size] = 0;
-            break;
-        }
-        free( name );
-        if (status == STATUS_DLL_NOT_FOUND) return STATUS_INVALID_ADDRESS;
-        if (status != STATUS_BUFFER_TOO_SMALL) return status;
-    }
-
-    dos_path_name.Buffer = name;
-    dos_path_name.Length = size * sizeof(WCHAR);
-
-    if (!(nt_name.Buffer = get_nt_pathname( &dos_path_name )))
-    {
-        free( name );
-        return STATUS_INVALID_PARAMETER;
-    }
-found:
-    nt_name.Length = wcslen( nt_name.Buffer ) * sizeof(WCHAR);
-    if (nt_name.Length >= sizeof(dosprefixW) &&
-        !memcmp( nt_name.Buffer, dosprefixW, sizeof(dosprefixW) ))
-    {
-        UNICODE_STRING device_name = nt_name;
-        offset = sizeof(dosprefixW) / sizeof(WCHAR);
-        while (offset * sizeof(WCHAR) < nt_name.Length && nt_name.Buffer[ offset ] != '\\') offset++;
-        device_name.Length = offset * sizeof(WCHAR);
-        if (read_nt_symlink( NULL, &device_name, symlinkW, MAX_DIR_ENTRY_LEN ))
-        {
-            symlinkW[0] = 0;
-            offset = 0;
-        }
-    }
-
-    *res_len = sizeof(MEMORY_SECTION_NAME) + wcslen(symlinkW) * sizeof(WCHAR) +
-               nt_name.Length - offset * sizeof(WCHAR) + sizeof(WCHAR);
-    if (len >= *res_len)
-    {
-        info->SectionFileName.Length = wcslen(symlinkW) * sizeof(WCHAR) +
-                                       nt_name.Length - offset * sizeof(WCHAR);
-        info->SectionFileName.MaximumLength = info->SectionFileName.Length + sizeof(WCHAR);
-        info->SectionFileName.Buffer = (WCHAR *)(info + 1);
-
-        ptr = (WCHAR *)(info + 1);
-        wcscpy( ptr, symlinkW );
-        ptr += wcslen(symlinkW);
-        memcpy( ptr, nt_name.Buffer + offset, nt_name.Length - offset * sizeof(WCHAR) );
-        ptr[ nt_name.Length / sizeof(WCHAR) - offset ] = 0;
-    }
-    else
-        status = (len < sizeof(MEMORY_SECTION_NAME)) ? STATUS_INFO_LENGTH_MISMATCH : STATUS_BUFFER_OVERFLOW;
-
-    free( name );
-    free( nt_name.Buffer );
     return status;
 }
-
 
 #define UNIMPLEMENTED_INFO_CLASS(c) \
     case c: \
@@ -4215,12 +4125,10 @@ NTSTATUS WINAPI NtQueryVirtualMemory( HANDLE process, LPCVOID addr,
     {
         case MemoryBasicInformation:
             return get_basic_memory_info( process, addr, buffer, len, res_len );
-
         case MemoryWorkingSetExInformation:
             return get_working_set_ex( process, addr, buffer, len, res_len );
-
         case MemorySectionName:
-            return get_section_name( process, addr, buffer, len, res_len );
+            return get_memory_section_name( process, addr, buffer, len, res_len );
 
         UNIMPLEMENTED_INFO_CLASS(MemoryWorkingSetList);
         UNIMPLEMENTED_INFO_CLASS(MemoryBasicVlmInformation);

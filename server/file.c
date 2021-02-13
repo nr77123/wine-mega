@@ -396,7 +396,7 @@ static struct security_descriptor *inherit_sd( const struct security_descriptor 
 }
 
 static struct security_descriptor *file_get_parent_sd( struct fd *root, const char *child_name,
-                                                       int child_len, int is_dir )
+                                                       int child_len, struct unicode_str nt_name, int is_dir )
 {
     struct security_descriptor *parent_sd, *sd = NULL;
     mode_t parent_mode = 0555;
@@ -422,7 +422,7 @@ static struct security_descriptor *file_get_parent_sd( struct fd *root, const ch
     while (p > parent_name && *p == '/') p--;
     p[1] = 0;
 
-    parent_fd = open_fd( root, parent_name, O_NONBLOCK | O_LARGEFILE, &parent_mode,
+    parent_fd = open_fd( root, parent_name, nt_name, O_NONBLOCK | O_LARGEFILE, &parent_mode,
                          READ_CONTROL|ACCESS_SYSTEM_SECURITY,
                          FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
                          FILE_OPEN_FOR_BACKUP_INTENT );
@@ -446,6 +446,7 @@ static struct security_descriptor *file_get_parent_sd( struct fd *root, const ch
 }
 
 static struct object *create_file( struct fd *root, const char *nameptr, data_size_t len,
+                                   struct unicode_str nt_name,
                                    unsigned int access, unsigned int sharing, int create,
                                    unsigned int options, unsigned int attrs,
                                    const struct security_descriptor *sd )
@@ -457,7 +458,7 @@ static struct object *create_file( struct fd *root, const char *nameptr, data_si
     char *name;
     mode_t mode;
 
-    if (!len || ((nameptr[0] == '/') ^ !root))
+    if (!len || ((nameptr[0] == '/') ^ !root) || (nt_name.len && ((nt_name.str[0] == '\\') ^ !root)))
     {
         set_error( STATUS_OBJECT_PATH_SYNTAX_BAD );
         return NULL;
@@ -481,7 +482,7 @@ static struct object *create_file( struct fd *root, const char *nameptr, data_si
 
     /* Note: inheritance of security descriptors only occurs on creation when sd is NULL */
     if (!sd && (create == FILE_CREATE || create == FILE_OVERWRITE_IF))
-        sd = temp_sd = file_get_parent_sd( root, nameptr, len, options & FILE_DIRECTORY_FILE );
+        sd = temp_sd = file_get_parent_sd( root, nameptr, len, nt_name, options & FILE_DIRECTORY_FILE );
 
     if (sd)
     {
@@ -508,7 +509,7 @@ static struct object *create_file( struct fd *root, const char *nameptr, data_si
     access = map_access( access, &file_type.mapping );
 
     /* FIXME: should set error to STATUS_OBJECT_NAME_COLLISION if file existed before */
-    fd = open_fd( root, name, flags | O_NONBLOCK | O_LARGEFILE, &mode, access, sharing, options );
+    fd = open_fd( root, name, nt_name, flags | O_NONBLOCK | O_LARGEFILE, &mode, access, sharing, options );
     if (!fd) goto done;
 
     if (S_ISDIR(mode))
@@ -920,13 +921,15 @@ static struct object *file_open_file( struct object *obj, unsigned int access,
 {
     struct file *file = (struct file *)obj;
     struct object *new_file = NULL;
+    struct unicode_str nt_name;
     char *unix_name;
 
     assert( obj->ops == &file_ops );
 
     if ((unix_name = dup_fd_name( file->fd, "" )))
     {
-        new_file = create_file( NULL, unix_name, strlen(unix_name), access,
+        get_nt_name( file->fd, &nt_name );
+        new_file = create_file( NULL, unix_name, strlen(unix_name), nt_name, access,
                                 sharing, FILE_OPEN, options, 0, NULL );
         free( unix_name );
     }
@@ -1017,20 +1020,13 @@ DECL_HANDLER(create_file)
 {
     struct object *file;
     struct fd *root_fd = NULL;
-    struct unicode_str unicode_name;
+    struct unicode_str nt_name;
     const struct security_descriptor *sd;
-    const struct object_attributes *objattr = get_req_object_attributes( &sd, &unicode_name, NULL );
+    const struct object_attributes *objattr = get_req_object_attributes( &sd, &nt_name, NULL );
     const char *name;
     data_size_t name_len;
 
     if (!objattr) return;
-
-    /* name is transferred in the unix codepage outside of the objattr structure */
-    if (unicode_name.len)
-    {
-        set_error( STATUS_INVALID_PARAMETER );
-        return;
-    }
 
     if (objattr->rootdir)
     {
@@ -1045,7 +1041,7 @@ DECL_HANDLER(create_file)
     name = get_req_data_after_objattr( objattr, &name_len );
 
     reply->handle = 0;
-    if ((file = create_file( root_fd, name, name_len, req->access, req->sharing,
+    if ((file = create_file( root_fd, name, name_len, nt_name, req->access, req->sharing,
                              req->create, req->options, req->attrs, sd )))
     {
         if (get_error() == STATUS_OBJECT_NAME_EXISTS)

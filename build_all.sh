@@ -46,11 +46,13 @@ git submodule update --init --recursive &&
 	make depend &&
 	make -j9 &&
 	make install &&
-	ln -vs wine64 "${PREFIX}/bin/wine"
+	if ! [ -a "${PREFIX}/bin/wine" ] ; then
+		ln -vs wine64 "${PREFIX}/bin/wine"
+	fi
 ) &&
 
 echo &&
-echo "==== Wine built and installed to ${PREFIX} successfully! ===="
+echo "==== Wine built and installed to ${PREFIX} successfully! ====" &&
 echo &&
 
 (
