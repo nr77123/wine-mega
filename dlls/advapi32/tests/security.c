@@ -1463,8 +1463,10 @@ static void test_AccessCheck(void)
     ret = AccessCheck(SecurityDescriptor, Token, KEY_READ, &Mapping,
                       0, &PrivSetLen, &Access, &AccessStatus);
     err = GetLastError();
+todo_wine
     ok(!ret && err == ERROR_INSUFFICIENT_BUFFER, "AccessCheck should have "
        "failed with ERROR_INSUFFICIENT_BUFFER, instead of %d\n", err);
+todo_wine
     ok(PrivSetLen == sizeof(PRIVILEGE_SET), "PrivSetLen returns %d\n", PrivSetLen);
     ok(Access == 0x1abe11ed && AccessStatus == 0x1abe11ed,
        "Access and/or AccessStatus were changed!\n");
@@ -3645,7 +3647,7 @@ static void test_CreateDirectoryA(void)
                                    (PSID *)&owner, NULL, &pDacl, NULL, &pSD);
     ok(error == ERROR_SUCCESS, "Failed to get permissions on file\n");
     test_inherited_dacl(pDacl, admin_sid, user_sid, INHERITED_ACE,
-                        0x1f01ff, FALSE, FALSE, FALSE, __LINE__);
+                        0x1f01ff, TRUE, TRUE, TRUE, __LINE__);
     LocalFree(pSD);
     CloseHandle(hTemp);
 
@@ -3712,7 +3714,7 @@ static void test_CreateDirectoryA(void)
                                    (PSID *)&owner, NULL, &pDacl, NULL, &pSD);
     ok(error == ERROR_SUCCESS, "Failed to get permissions on file\n");
     test_inherited_dacl(pDacl, admin_sid, user_sid, INHERITED_ACE,
-                        0x1f01ff, FALSE, FALSE, FALSE, __LINE__);
+                        0x1f01ff, TRUE, TRUE, TRUE, __LINE__);
     LocalFree(pSD);
     CloseHandle(hTemp);
 
@@ -3777,7 +3779,7 @@ static void test_CreateDirectoryA(void)
     ok(error == ERROR_SUCCESS, "Failed to get permissions on file\n");
     test_inherited_dacl(pDacl, admin_sid, user_sid,
                         OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERITED_ACE,
-                        0x1f01ff, FALSE, FALSE, FALSE, __LINE__);
+                        0x1f01ff, TRUE, TRUE, TRUE, __LINE__);
     LocalFree(pSD);
     bret = RemoveDirectoryA(tmpfile);
     ok(bret == TRUE, "RemoveDirectoryA failed with error %u\n", GetLastError());
@@ -3857,7 +3859,7 @@ static void test_CreateDirectoryA(void)
     ok(error == ERROR_SUCCESS, "Failed to get permissions on file\n");
     test_inherited_dacl(pDacl, admin_sid, user_sid,
                         OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE | INHERITED_ACE,
-                        0x1f01ff, FALSE, FALSE, FALSE, __LINE__);
+                        0x1f01ff, TRUE, TRUE, TRUE, __LINE__);
     LocalFree(pSD);
     CloseHandle(hTemp);
 

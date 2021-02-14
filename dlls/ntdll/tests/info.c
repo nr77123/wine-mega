@@ -22,7 +22,6 @@
 #include <winnls.h>
 #include <stdio.h>
 
-static NTSTATUS (WINAPI * pRtlDowncaseUnicodeString)(UNICODE_STRING *, const UNICODE_STRING *, BOOLEAN);
 static NTSTATUS (WINAPI * pNtQuerySystemInformation)(SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
 static NTSTATUS (WINAPI * pNtSetSystemInformation)(SYSTEM_INFORMATION_CLASS, PVOID, ULONG);
 static NTSTATUS (WINAPI * pRtlGetNativeSystemInformation)(SYSTEM_INFORMATION_CLASS, PVOID, ULONG, PULONG);
@@ -80,7 +79,6 @@ static BOOL InitFunctionPtrs(void)
     HMODULE hntdll = GetModuleHandleA("ntdll");
     HMODULE hkernel32 = GetModuleHandleA("kernel32");
 
-    NTDLL_GET_PROC(RtlDowncaseUnicodeString);
     NTDLL_GET_PROC(NtQuerySystemInformation);
     NTDLL_GET_PROC(NtSetSystemInformation);
     NTDLL_GET_PROC(RtlGetNativeSystemInformation);
@@ -2292,7 +2290,6 @@ static void test_queryvirtualmemory(void)
     ok(status == STATUS_INFO_LENGTH_MISMATCH, "Expected STATUS_INFO_LENGTH_MISMATCH, got %08x\n", status);
 
     module = GetModuleHandleA( "ntdll.dll" );
-
     memset(buffer, 0xcc, sizeof(buffer));
     readcount = 0xdeadbeef;
     status = pNtQueryVirtualMemory(NtCurrentProcess(), module, MemorySectionName,

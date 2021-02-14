@@ -1302,7 +1302,7 @@ static void CALLBACK waitqueue_thread_proc( void *param )
         else
         {
             handles[num_handles] = bucket->update_event;
-            leave_critical_section( &waitqueue.cs );
+            RtlLeaveCriticalSection( &waitqueue.cs );
             status = NtWaitForMultipleObjects( num_handles + 1, handles, TRUE, bucket->alertable, &timeout );
             enter_critical_section( &waitqueue.cs );
 
@@ -2148,8 +2148,8 @@ static void tp_object_execute( struct threadpool_object *object, BOOL wait_threa
     /* Leave critical section and do the actual callback. */
     object->num_associated_callbacks++;
     object->num_running_callbacks++;
-    leave_critical_section( &pool->cs );
-    if (wait_thread) leave_critical_section( &waitqueue.cs );
+    RtlLeaveCriticalSection( &pool->cs );
+    if (wait_thread) RtlLeaveCriticalSection( &waitqueue.cs );
 
     /* Initialize threadpool instance struct. */
     callback_instance = (TP_CALLBACK_INSTANCE *)&instance;
@@ -2230,7 +2230,7 @@ static void tp_object_execute( struct threadpool_object *object, BOOL wait_threa
     /* Execute cleanup tasks. */
     if (instance.cleanup.critical_section)
     {
-        leave_critical_section( instance.cleanup.critical_section );
+        RtlLeaveCriticalSection( instance.cleanup.critical_section );
     }
     if (instance.cleanup.mutex)
     {
@@ -2253,8 +2253,8 @@ static void tp_object_execute( struct threadpool_object *object, BOOL wait_threa
     }
 
 skip_cleanup:
-    if (wait_thread) enter_critical_section( &waitqueue.cs );
-    enter_critical_section( &pool->cs );
+    if (wait_thread) RtlEnterCriticalSection( &waitqueue.cs );
+    RtlEnterCriticalSection( &pool->cs );
 
     /* Simple callbacks are automatically shutdown after execution. */
     if (object->type == TP_OBJECT_TYPE_SIMPLE)
@@ -2299,7 +2299,7 @@ static void CALLBACK threadpool_worker_proc( void *param )
             list_remove( &object->pool_entry );
             if (object->num_pending_callbacks > 1)
                 tp_object_prio_queue( object );
-			
+
             tp_object_execute( object, FALSE );
 
             assert(pool->num_busy_workers);

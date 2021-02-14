@@ -2013,7 +2013,7 @@ static NTSTATUS fill_file_info( const struct stat *st, ULONG attr, void *ptr,
 }
 
 
-NTSTATUS server_get_unix_name( HANDLE handle, char **unix_name, BOOL nofollow )
+static NTSTATUS server_get_unix_name( HANDLE handle, char **unix_name, BOOL nofollow )
 {
     data_size_t size = 1024;
     NTSTATUS ret;
@@ -3672,7 +3672,7 @@ NTSTATUS CDECL wine_nt_to_unix_file_name( const UNICODE_STRING *nameW, char *nam
 }
 
 /* read the contents of an NT symlink object */
-NTSTATUS read_nt_symlink( HANDLE root, UNICODE_STRING *name, WCHAR *target, size_t length )
+static NTSTATUS read_nt_symlink( HANDLE root, UNICODE_STRING *name, WCHAR *target, size_t length )
 {
     OBJECT_ATTRIBUTES attr;
     UNICODE_STRING targetW;
@@ -3962,6 +3962,7 @@ NTSTATUS WINAPI NtCreateFile( HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBU
                               ULONG attributes, ULONG sharing, ULONG disposition,
                               ULONG options, void *ea_buffer, ULONG ea_length )
 {
+    OBJECT_ATTRIBUTES nt_attr;
     UNICODE_STRING nt_name = { 0 };
     char *unix_name;
     BOOL created = FALSE;
@@ -4007,17 +4008,15 @@ NTSTATUS WINAPI NtCreateFile( HANDLE *handle, ACCESS_MASK access, OBJECT_ATTRIBU
 
     if (io->u.Status != STATUS_SUCCESS)
     {
-        OBJECT_ATTRIBUTES nt_attr = *attr;
-
-        if (nt_name.Buffer) nt_attr.ObjectName = &nt_name;
-        io->u.Status = open_unix_file( handle, unix_name, access, &nt_attr, attributes,
-                                       sharing, disposition, options, ea_buffer, ea_length );
-        free( nt_name.Buffer );
-        free( unix_name );
+        WARN( "%s not found (%x)\n", debugstr_us(attr->ObjectName), io->u.Status );
+        return io->u.Status;
     }
 
-    io->u.Status = open_unix_file( handle, unix_name, access, attr, attributes,
+    nt_attr = *attr;
+    if (nt_name.Buffer) nt_attr.ObjectName = &nt_name;
+    io->u.Status = open_unix_file( handle, unix_name, access, &nt_attr, attributes,
                                    sharing, disposition, options, ea_buffer, ea_length );
+    free( nt_name.Buffer );
 
     if (io->u.Status == STATUS_SUCCESS)
     {

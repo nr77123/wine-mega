@@ -1891,192 +1891,6 @@ HRESULT WINAPI SHMultiFileProperties(IDataObject *pdtobj, DWORD flags)
     return E_NOTIMPL;
 }
 
-static BOOL progressbar_calc_size(FILE_OPERATION *op, LPWSTR buf, BOOL is_folder, DWORD *ticks)
-{
-    WIN32_FIND_DATAW wfd;
-    HANDLE find;
-    UINT i = strlenW(buf);
-    WCHAR *file = buf + i;
-    size_t size = MAX_PATH - i;
-
-    if (size < 3)
-        return FALSE;
-
-    if (is_folder)
-    {
-        *file++ = '\\';
-        size--;
-
-        file[0] = '*';
-        file[1] = 0;
-    }
-    else
-    {
-        file[0] = 0;
-    }
-
-    find = FindFirstFileW(buf, &wfd);
-    if (find == INVALID_HANDLE_VALUE)
-    {
-        WARN("FindFirstFileW %s failed\n", debugstr_w(buf));
-        return FALSE;
-    }
-
-    do
-    {
-        if (wfd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-        {
-            if (wfd.cFileName[0] == '.')
-            {
-                if (wfd.cFileName[1] == 0) continue;
-                if (wfd.cFileName[1] == '.' && wfd.cFileName[2] == 0) continue;
-            }
-
-            if (!lstrcpynW(file, wfd.cFileName, size)) continue;
-            progressbar_calc_size(op, buf, TRUE, ticks);
-        }
-        else
-        {
-            LARGE_INTEGER filesize;
-            filesize.u.LowPart  = wfd.nFileSizeLow;
-            filesize.u.HighPart = wfd.nFileSizeHigh;
-            op->totalSize.QuadPart += filesize.QuadPart;
-        }
-
-        if (GetTickCount() - *ticks > 500)
-        {
-            if (op->progress != NULL)
-                op->bCancelled |= IProgressDialog_HasUserCancelled(op->progress);
-            if (op->bCancelled)
-                break;
-            *ticks = GetTickCount();
-        }
-
-    }
-    while (FindNextFileW(find, &wfd));
-
-    FindClose(find);
-    return TRUE;
-}
-
-static void progressbar_calc_totalsize(FILE_OPERATION *op, const FILE_LIST *from)
-{
-    WCHAR filename[MAX_PATH];
-    DWORD ticks = GetTickCount();
-    UINT i;
-
-    op->totalSize.QuadPart = 0;
-
-    for (i = 0; i < from->dwNumFiles && !op->bCancelled; i++)
-    {
-        if (!lstrcpynW(filename, from->feFiles[i].szFullPath, sizeof(filename)/sizeof(filename[0])))
-            continue;
-        progressbar_calc_size(op, filename, IsAttribDir(from->feFiles[i].attributes), &ticks);
-    }
-}
-
-static void progressbar_update_title(FILE_OPERATION *op)
-{
-    WCHAR buf[64];
-    UINT title_id, builder_id, animation_id;
-
-    if (op->progress == NULL)
-        return;
-
-    switch (op->req->wFunc)
-    {
-        case FO_COPY:
-            title_id      = IDS_FILEOP_COPYING;
-            builder_id    = IDS_FILEOP_FROM_TO;
-            animation_id  = IDR_AVI_FILECOPY;
-            break;
-
-        case FO_DELETE:
-            title_id      = IDS_FILEOP_DELETING;
-            builder_id    = IDS_FILEOP_FROM;
-            animation_id  = IDR_AVI_FILEDELETE;
-            break;
-
-        case FO_MOVE:
-            title_id      = IDS_FILEOP_MOVING;
-            builder_id    = IDS_FILEOP_FROM_TO;
-            animation_id  = IDR_AVI_FILEMOVE;
-            break;
-
-        default:
-            return;
-    }
-
-    LoadStringW(shell32_hInstance, title_id, buf, sizeof(buf)/sizeof(WCHAR));
-    IProgressDialog_SetTitle(op->progress, buf);
-
-    LoadStringW(shell32_hInstance, builder_id,  op->szBuilderString,
-                sizeof(op->szBuilderString)/sizeof(WCHAR));
-
-    LoadStringW(shell32_hInstance, IDS_FILEOP_PREFLIGHT, buf, sizeof(buf)/sizeof(WCHAR));
-    IProgressDialog_SetLine(op->progress, 1, buf, FALSE, NULL);
-
-    IProgressDialog_SetAnimation(op->progress, shell32_hInstance, animation_id);
-}
-
-static void progressbar_update_files(FILE_OPERATION *op, LPCWSTR src, LPCWSTR dst)
-{
-    LPWSTR src_file, dst_file;
-    WCHAR src_dir[64], dst_dir[64], final[260];
-    DWORD_PTR args[2] = {0, 0};
-
-    if (!op->progress || !src || (op->req->wFunc == FO_MOVE && !dst))
-        return;
-
-    if (op->req->wFunc != FO_COPY &&
-        op->req->wFunc != FO_MOVE &&
-        op->req->wFunc != FO_DELETE)
-    {
-        return;
-    }
-
-    src_file = PathFindFileNameW(src);
-    lstrcpynW(src_dir, src, min(sizeof(src_dir) / sizeof(WCHAR) - 1, src_file - src));
-    args[0] = (DWORD_PTR)&src_dir;
-
-    if (op->req->wFunc == FO_MOVE ||
-        op->req->wFunc == FO_COPY)
-    {
-        if (PathIsDirectoryW(dst))
-            args[1] = (DWORD_PTR)&dst;
-        else
-        {
-            dst_file = PathFindFileNameW(dst);
-            lstrcpynW(dst_dir, dst, min(sizeof(dst_dir) / sizeof(WCHAR) - 1, dst_file - dst));
-            args[1] = (DWORD_PTR)&dst_dir;
-        }
-    }
-
-    FormatMessageW(FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY, op->szBuilderString,
-                   0, 0, final, sizeof(final)/sizeof(final[0]), (__ms_va_list *)&args);
-
-    IProgressDialog_SetLine(op->progress, 1, src_file, FALSE, NULL);
-    IProgressDialog_SetLine(op->progress, 2, final, FALSE, NULL);
-}
-
-static DWORD CALLBACK progressbar_copy_routine(LARGE_INTEGER total_size, LARGE_INTEGER total_transferred, LARGE_INTEGER stream_size,
-        LARGE_INTEGER stream_transferred, DWORD stream_number, DWORD reason, HANDLE src_file, HANDLE dst_file, LPVOID user)
-{
-    FILE_OPERATION *op = (FILE_OPERATION *)user;
-
-    if (!op->progress)
-        return PROGRESS_CONTINUE;
-
-    if (reason == CALLBACK_STREAM_SWITCH)
-        op->completedSize.QuadPart += total_size.QuadPart;
-
-    IProgressDialog_SetProgress64(op->progress, op->completedSize.QuadPart - total_size.QuadPart +
-                                  total_transferred.QuadPart, op->totalSize.QuadPart);
-
-    op->bCancelled |= IProgressDialog_HasUserCancelled(op->progress);
-    return op->bCancelled ? PROGRESS_CANCEL : PROGRESS_CONTINUE;
-}
-
 struct file_operation
 {
     IFileOperation IFileOperation_iface;
@@ -2322,4 +2136,190 @@ HRESULT WINAPI IFileOperation_Constructor(IUnknown *outer, REFIID riid, void **o
     IFileOperation_Release(&object->IFileOperation_iface);
 
     return hr;
+}
+
+static BOOL progressbar_calc_size(FILE_OPERATION *op, LPWSTR buf, BOOL is_folder, DWORD *ticks)
+{
+    WIN32_FIND_DATAW wfd;
+    HANDLE find;
+    UINT i = strlenW(buf);
+    WCHAR *file = buf + i;
+    size_t size = MAX_PATH - i;
+
+    if (size < 3)
+        return FALSE;
+
+    if (is_folder)
+    {
+        *file++ = '\\';
+        size--;
+
+        file[0] = '*';
+        file[1] = 0;
+    }
+    else
+    {
+        file[0] = 0;
+    }
+
+    find = FindFirstFileW(buf, &wfd);
+    if (find == INVALID_HANDLE_VALUE)
+    {
+        WARN("FindFirstFileW %s failed\n", debugstr_w(buf));
+        return FALSE;
+    }
+
+    do
+    {
+        if (wfd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        {
+            if (wfd.cFileName[0] == '.')
+            {
+                if (wfd.cFileName[1] == 0) continue;
+                if (wfd.cFileName[1] == '.' && wfd.cFileName[2] == 0) continue;
+            }
+
+            if (!lstrcpynW(file, wfd.cFileName, size)) continue;
+            progressbar_calc_size(op, buf, TRUE, ticks);
+        }
+        else
+        {
+            LARGE_INTEGER filesize;
+            filesize.u.LowPart  = wfd.nFileSizeLow;
+            filesize.u.HighPart = wfd.nFileSizeHigh;
+            op->totalSize.QuadPart += filesize.QuadPart;
+        }
+
+        if (GetTickCount() - *ticks > 500)
+        {
+            if (op->progress != NULL)
+                op->bCancelled |= IProgressDialog_HasUserCancelled(op->progress);
+            if (op->bCancelled)
+                break;
+            *ticks = GetTickCount();
+        }
+
+    }
+    while (FindNextFileW(find, &wfd));
+
+    FindClose(find);
+    return TRUE;
+}
+
+static void progressbar_calc_totalsize(FILE_OPERATION *op, const FILE_LIST *from)
+{
+    WCHAR filename[MAX_PATH];
+    DWORD ticks = GetTickCount();
+    UINT i;
+
+    op->totalSize.QuadPart = 0;
+
+    for (i = 0; i < from->dwNumFiles && !op->bCancelled; i++)
+    {
+        if (!lstrcpynW(filename, from->feFiles[i].szFullPath, sizeof(filename)/sizeof(filename[0])))
+            continue;
+        progressbar_calc_size(op, filename, IsAttribDir(from->feFiles[i].attributes), &ticks);
+    }
+}
+
+static void progressbar_update_title(FILE_OPERATION *op)
+{
+    WCHAR buf[64];
+    UINT title_id, builder_id, animation_id;
+
+    if (op->progress == NULL)
+        return;
+
+    switch (op->req->wFunc)
+    {
+        case FO_COPY:
+            title_id      = IDS_FILEOP_COPYING;
+            builder_id    = IDS_FILEOP_FROM_TO;
+            animation_id  = IDR_AVI_FILECOPY;
+            break;
+
+        case FO_DELETE:
+            title_id      = IDS_FILEOP_DELETING;
+            builder_id    = IDS_FILEOP_FROM;
+            animation_id  = IDR_AVI_FILEDELETE;
+            break;
+
+        case FO_MOVE:
+            title_id      = IDS_FILEOP_MOVING;
+            builder_id    = IDS_FILEOP_FROM_TO;
+            animation_id  = IDR_AVI_FILEMOVE;
+            break;
+
+        default:
+            return;
+    }
+
+    LoadStringW(shell32_hInstance, title_id, buf, sizeof(buf)/sizeof(WCHAR));
+    IProgressDialog_SetTitle(op->progress, buf);
+
+    LoadStringW(shell32_hInstance, builder_id,  op->szBuilderString,
+                sizeof(op->szBuilderString)/sizeof(WCHAR));
+
+    LoadStringW(shell32_hInstance, IDS_FILEOP_PREFLIGHT, buf, sizeof(buf)/sizeof(WCHAR));
+    IProgressDialog_SetLine(op->progress, 1, buf, FALSE, NULL);
+
+    IProgressDialog_SetAnimation(op->progress, shell32_hInstance, animation_id);
+}
+
+static void progressbar_update_files(FILE_OPERATION *op, LPCWSTR src, LPCWSTR dst)
+{
+    LPWSTR src_file, dst_file;
+    WCHAR src_dir[64], dst_dir[64], final[260];
+    DWORD_PTR args[2] = {0, 0};
+
+    if (!op->progress || !src || (op->req->wFunc == FO_MOVE && !dst))
+        return;
+
+    if (op->req->wFunc != FO_COPY &&
+        op->req->wFunc != FO_MOVE &&
+        op->req->wFunc != FO_DELETE)
+    {
+        return;
+    }
+
+    src_file = PathFindFileNameW(src);
+    lstrcpynW(src_dir, src, min(sizeof(src_dir) / sizeof(WCHAR) - 1, src_file - src));
+    args[0] = (DWORD_PTR)&src_dir;
+
+    if (op->req->wFunc == FO_MOVE ||
+        op->req->wFunc == FO_COPY)
+    {
+        if (PathIsDirectoryW(dst))
+            args[1] = (DWORD_PTR)&dst;
+        else
+        {
+            dst_file = PathFindFileNameW(dst);
+            lstrcpynW(dst_dir, dst, min(sizeof(dst_dir) / sizeof(WCHAR) - 1, dst_file - dst));
+            args[1] = (DWORD_PTR)&dst_dir;
+        }
+    }
+
+    FormatMessageW(FORMAT_MESSAGE_FROM_STRING | FORMAT_MESSAGE_ARGUMENT_ARRAY, op->szBuilderString,
+                   0, 0, final, sizeof(final)/sizeof(final[0]), (__ms_va_list *)&args);
+
+    IProgressDialog_SetLine(op->progress, 1, src_file, FALSE, NULL);
+    IProgressDialog_SetLine(op->progress, 2, final, FALSE, NULL);
+}
+
+static DWORD CALLBACK progressbar_copy_routine(LARGE_INTEGER total_size, LARGE_INTEGER total_transferred, LARGE_INTEGER stream_size,
+        LARGE_INTEGER stream_transferred, DWORD stream_number, DWORD reason, HANDLE src_file, HANDLE dst_file, LPVOID user)
+{
+    FILE_OPERATION *op = (FILE_OPERATION *)user;
+
+    if (!op->progress)
+        return PROGRESS_CONTINUE;
+
+    if (reason == CALLBACK_STREAM_SWITCH)
+        op->completedSize.QuadPart += total_size.QuadPart;
+
+    IProgressDialog_SetProgress64(op->progress, op->completedSize.QuadPart - total_size.QuadPart +
+                                  total_transferred.QuadPart, op->totalSize.QuadPart);
+
+    op->bCancelled |= IProgressDialog_HasUserCancelled(op->progress);
+    return op->bCancelled ? PROGRESS_CANCEL : PROGRESS_CONTINUE;
 }
