@@ -9,6 +9,18 @@ ORIGINAL_PATH="${PATH}"
 
 export PKG_CONFIG_PATH="${PREFIX}/lib64/pkgconfig:${PKG_CONFIG_PATH}"
 
+if [ -z "${CFLAGS}" ] ; then
+	CFLAGS="-O3 -march=native -s"
+fi
+if [ -z "${CXXFLAGS}" ] ; then
+	CXXFLAGS="-O3 -march=native -s"
+fi
+if [ -z "${MAKEOPTS}" ] ; then
+	MAKEOPTS="-j9"
+fi
+export CFLAGS="${CFLAGS}"
+export CXXFLAGS="${CXXFLAGS}"
+
 git submodule update --init --recursive &&
 (
 	cd vkd3d-proton &&
@@ -48,7 +60,7 @@ git submodule update --init --recursive &&
 (
 	./configure --prefix="${PREFIX}" --enable-win64 --disable-win16 --with-vkd3d &&
 	make depend &&
-	make -j9 &&
+	make ${MAKEOPTS} &&
 	make install &&
 	if ! [ -a "${PREFIX}/bin/wine" ] ; then
 		ln -vs wine64 "${PREFIX}/bin/wine"
