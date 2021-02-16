@@ -101,11 +101,6 @@ extern void     (WINAPI *pLdrInitializeThunk)(CONTEXT*,void**,ULONG_PTR,ULONG_PT
 extern void     (WINAPI *pRtlUserThreadStart)( PRTL_THREAD_START_ROUTINE entry, void *arg ) DECLSPEC_HIDDEN;
 extern LONGLONG CDECL fast_RtlGetSystemTimePrecise(void) DECLSPEC_HIDDEN;
 
-extern NTSTATUS CDECL get_initial_environment( WCHAR **wargv[], WCHAR *env, SIZE_T *size ) DECLSPEC_HIDDEN;
-extern NTSTATUS CDECL get_startup_info( startup_info_t *info, SIZE_T *total_size, SIZE_T *info_size ) DECLSPEC_HIDDEN;
-extern NTSTATUS CDECL get_dynamic_environment( WCHAR *env, SIZE_T *size ) DECLSPEC_HIDDEN;
-extern void CDECL get_initial_directory( UNICODE_STRING *dir ) DECLSPEC_HIDDEN;
-extern void CDECL get_initial_console( RTL_USER_PROCESS_PARAMETERS *params ) DECLSPEC_HIDDEN;
 extern USHORT * CDECL get_unix_codepage_data(void) DECLSPEC_HIDDEN;
 extern void CDECL get_locales( WCHAR *sys, WCHAR *user ) DECLSPEC_HIDDEN;
 extern void CDECL virtual_release_address_space(void) DECLSPEC_HIDDEN;
@@ -142,6 +137,7 @@ extern struct ldt_copy __wine_ldt_copy DECLSPEC_HIDDEN;
 #endif
 
 extern void init_environment( int argc, char *argv[], char *envp[] ) DECLSPEC_HIDDEN;
+extern void init_startup_info(void) DECLSPEC_HIDDEN;
 extern DWORD ntdll_umbstowcs( const char *src, DWORD srclen, WCHAR *dst, DWORD dstlen ) DECLSPEC_HIDDEN;
 extern int ntdll_wcstoumbs( const WCHAR *src, DWORD srclen, char *dst, DWORD dstlen, BOOL strict ) DECLSPEC_HIDDEN;
 extern char **build_envp( const WCHAR *envW ) DECLSPEC_HIDDEN;
@@ -183,7 +179,8 @@ extern void *anon_mmap_alloc( size_t size, int prot ) DECLSPEC_HIDDEN;
 extern void virtual_init(void) DECLSPEC_HIDDEN;
 extern ULONG_PTR get_system_affinity_mask(void) DECLSPEC_HIDDEN;
 extern void virtual_get_system_info( SYSTEM_BASIC_INFORMATION *info ) DECLSPEC_HIDDEN;
-extern NTSTATUS virtual_create_builtin_view( void *module, pe_image_info_t *info ) DECLSPEC_HIDDEN;
+extern NTSTATUS virtual_create_builtin_view( void *module, const UNICODE_STRING *nt_name,
+                                             pe_image_info_t *info ) DECLSPEC_HIDDEN;
 extern TEB *virtual_alloc_first_teb(void) DECLSPEC_HIDDEN;
 extern NTSTATUS virtual_alloc_teb( TEB **ret_teb ) DECLSPEC_HIDDEN;
 extern void virtual_free_teb( TEB *teb ) DECLSPEC_HIDDEN;

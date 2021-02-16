@@ -699,6 +699,7 @@ enum irp_type
     IRP_CALL_WRITE,
     IRP_CALL_FLUSH,
     IRP_CALL_IOCTL,
+    IRP_CALL_VOLUME,
     IRP_CALL_FREE,
     IRP_CALL_CANCEL
 };
@@ -751,6 +752,14 @@ typedef union
         int              __pad;
         client_ptr_t     file;
     } ioctl;
+    struct
+    {
+        enum irp_type    type;
+        unsigned int     info_class;
+        data_size_t      out_size;
+        int              __pad;
+        client_ptr_t     file;
+    } volume;
     struct
     {
         enum irp_type    type;
@@ -1710,13 +1719,16 @@ struct get_volume_info_request
 {
     struct request_header __header;
     obj_handle_t handle;
+    async_data_t async;
     unsigned int info_class;
-    char __pad_20[4];
+    char __pad_60[4];
 };
 struct get_volume_info_reply
 {
     struct reply_header __header;
+    obj_handle_t wait;
     /* VARARG(data,bytes); */
+    char __pad_12[4];
 };
 
 
@@ -1946,6 +1958,7 @@ struct map_view_request
     mem_size_t   size;
     file_pos_t   start;
     /* VARARG(image,pe_image_info); */
+    /* VARARG(name,unicode_str); */
 };
 struct map_view_reply
 {
@@ -6423,7 +6436,7 @@ union generic_reply
 
 /* ### protocol_version begin ### */
 
-#define SERVER_PROTOCOL_VERSION 675
+#define SERVER_PROTOCOL_VERSION 677
 
 /* ### protocol_version end ### */
 

@@ -381,6 +381,12 @@ static void dump_irp_params( const char *prefix, const irp_params_t *data )
         dump_uint64( ",file=", &data->ioctl.file );
         fputc( '}', stderr );
         break;
+    case IRP_CALL_VOLUME:
+        fprintf( stderr, "%s{VOLUME,class=%u,out_size=%u", prefix,
+                 data->volume.info_class, data->volume.out_size );
+        dump_uint64( ",file=", &data->volume.file );
+        fputc( '}', stderr );
+        break;
     case IRP_CALL_FREE:
         fprintf( stderr, "%s{FREE", prefix );
         dump_uint64( ",obj=", &data->free.obj );
@@ -1312,7 +1318,7 @@ static void dump_varargs_pe_image_info( const char *prefix, data_size_t size )
              info.header_size, info.file_size, info.checksum );
     dump_client_cpu( ",cpu=", &info.cpu );
     fputc( '}', stderr );
-    remove_data( size );
+    remove_data( min( size, sizeof(info) ));
 }
 
 static void dump_varargs_rawinput_devices(const char *prefix, data_size_t size )
@@ -1998,12 +2004,14 @@ static void dump_get_file_info_reply( const struct get_file_info_reply *req )
 static void dump_get_volume_info_request( const struct get_volume_info_request *req )
 {
     fprintf( stderr, " handle=%04x", req->handle );
+    dump_async_data( ", async=", &req->async );
     fprintf( stderr, ", info_class=%08x", req->info_class );
 }
 
 static void dump_get_volume_info_reply( const struct get_volume_info_reply *req )
 {
-    dump_varargs_bytes( " data=", cur_size );
+    fprintf( stderr, " wait=%04x", req->wait );
+    dump_varargs_bytes( ", data=", cur_size );
 }
 
 static void dump_lock_file_request( const struct lock_file_request *req )
@@ -2164,6 +2172,7 @@ static void dump_map_view_request( const struct map_view_request *req )
     dump_uint64( ", size=", &req->size );
     dump_uint64( ", start=", &req->start );
     dump_varargs_pe_image_info( ", image=", cur_size );
+    dump_varargs_unicode_str( ", name=", cur_size );
 }
 
 static void dump_unmap_view_request( const struct unmap_view_request *req )

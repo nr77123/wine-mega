@@ -211,6 +211,12 @@ struct unix_funcs
     struct wg_parser *(CDECL *wg_mpeg_audio_parser_create)(void);
     struct wg_parser *(CDECL *wg_wave_parser_create)(void);
     void (CDECL *wg_parser_destroy)(struct wg_parser *parser);
+
+    HRESULT (CDECL *wg_parser_connect)(struct wg_parser *parser, uint64_t file_size);
+    void (CDECL *wg_parser_disconnect)(struct wg_parser *parser);
+
+    uint32_t (CDECL *wg_parser_get_stream_count)(struct wg_parser *parser);
+    struct wg_parser_stream *(CDECL *wg_parser_get_stream)(struct wg_parser *parser, uint32_t index);
 };
 
 extern const struct unix_funcs *unix_funcs;
