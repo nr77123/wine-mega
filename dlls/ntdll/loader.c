@@ -21,6 +21,7 @@
 
 #include <assert.h>
 #include <stdarg.h>
+#include <stdlib.h>
 
 #include "ntstatus.h"
 #define WIN32_NO_STATUS
@@ -2030,12 +2031,12 @@ static NTSTATUS build_module( LPCWSTR load_path, const UNICODE_STRING *nt_name, 
 
     /* create the MODREF */
 
-    if (!(wm = alloc_module( *module, nt_name, (image_info->u.ImageFlags & IMAGE_FLAGS_WineBuiltin) )))
+    if (!(wm = alloc_module( *module, nt_name, (image_info->u.s.WineBuiltin) )))
         return STATUS_NO_MEMORY;
 
     if (id) wm->id = *id;
     if (image_info->LoaderFlags) wm->ldr.Flags |= LDR_COR_IMAGE;
-    if (image_info->u.ImageFlags & IMAGE_FLAGS_ComPlusILOnly) wm->ldr.Flags |= LDR_COR_ILONLY;
+    if (image_info->u.s.ComPlusILOnly) wm->ldr.Flags |= LDR_COR_ILONLY;
 
     set_security_cookie( *module, map_size );
 
@@ -2070,7 +2071,7 @@ static NTSTATUS build_module( LPCWSTR load_path, const UNICODE_STRING *nt_name, 
 
     TRACE( "loaded %s %p %p\n", debugstr_us(nt_name), wm, *module );
 
-    if (image_info->u.ImageFlags & IMAGE_FLAGS_WineBuiltin)
+    if (image_info->u.s.WineBuiltin)
     {
 #ifdef __aarch64__
         /* Always enable relay entry points on aarch64, to allow restoring
@@ -2086,7 +2087,7 @@ static NTSTATUS build_module( LPCWSTR load_path, const UNICODE_STRING *nt_name, 
     }
 
     TRACE_(loaddll)( "Loaded %s at %p: %s\n", debugstr_w(wm->ldr.FullDllName.Buffer), *module,
-                     (image_info->u.ImageFlags & IMAGE_FLAGS_WineBuiltin) ? "builtin" : "native" );
+                     (image_info->u.s.WineBuiltin) ? "builtin" : "native" );
 
     wm->ldr.LoadCount = 1;
     *pwm = wm;
@@ -2106,7 +2107,7 @@ static NTSTATUS build_builtin_module( const WCHAR *load_path, const UNICODE_STRI
     NTSTATUS status;
     SECTION_IMAGE_INFORMATION image_info = { 0 };
 
-    image_info.u.ImageFlags = IMAGE_FLAGS_WineBuiltin;
+    image_info.u.s.WineBuiltin = 1;
     status = build_module( load_path, nt_name, &module, &image_info, NULL, flags, pwm );
     if (status && module) unix_funcs->unload_builtin_dll( module );
     return status;
@@ -2222,7 +2223,7 @@ static BOOL is_valid_binary( HANDLE file, const SECTION_IMAGE_INFORMATION *info 
     if (info->Machine == IMAGE_FILE_MACHINE_ARM64) return TRUE;
 #endif
     if (!info->ImageContainsCode) return TRUE;
-    if (!(info->u.ImageFlags & IMAGE_FLAGS_ComPlusNativeReady))
+    if (!(info->u.s.ComPlusNativeReady))
     {
         IMAGE_COR20_HEADER cor_header;
         if (!get_cor_header( file, info, &cor_header )) return FALSE;
@@ -2833,7 +2834,7 @@ static NTSTATUS load_dll( const WCHAR *load_path, const WCHAR *libname, const WC
         break;
 
     case STATUS_SUCCESS:  /* valid PE file */
-        if (image_info.u.ImageFlags & IMAGE_FLAGS_WineBuiltin)
+        if (image_info.u.s.WineBuiltin)
         {
             switch (loadorder)
             {
@@ -2851,7 +2852,7 @@ static NTSTATUS load_dll( const WCHAR *load_path, const WCHAR *libname, const WC
             }
             break;
         }
-        if (!(image_info.u.ImageFlags & IMAGE_FLAGS_WineFakeDll))
+        if (!(image_info.u.s.WineFakeDll))
         {
             switch (loadorder)
             {

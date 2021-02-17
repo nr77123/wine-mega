@@ -215,8 +215,19 @@ struct unix_funcs
     HRESULT (CDECL *wg_parser_connect)(struct wg_parser *parser, uint64_t file_size);
     void (CDECL *wg_parser_disconnect)(struct wg_parser *parser);
 
+    void (CDECL *wg_parser_begin_flush)(struct wg_parser *parser);
+    void (CDECL *wg_parser_end_flush)(struct wg_parser *parser);
+
     uint32_t (CDECL *wg_parser_get_stream_count)(struct wg_parser *parser);
     struct wg_parser_stream *(CDECL *wg_parser_get_stream)(struct wg_parser *parser, uint32_t index);
+
+    void (CDECL *wg_parser_stream_get_preferred_format)(struct wg_parser_stream *stream, struct wg_format *format);
+    void (CDECL *wg_parser_stream_enable)(struct wg_parser_stream *stream, const struct wg_format *format);
+    void (CDECL *wg_parser_stream_disable)(struct wg_parser_stream *stream);
+
+    bool (CDECL *wg_parser_stream_get_event)(struct wg_parser_stream *stream, struct wg_parser_event *event);
+    void (CDECL *wg_parser_stream_notify_qos)(struct wg_parser_stream *stream,
+            bool underflow, double proportion, int64_t diff, uint64_t timestamp);
 };
 
 extern const struct unix_funcs *unix_funcs;

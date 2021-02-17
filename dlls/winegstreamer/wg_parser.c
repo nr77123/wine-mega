@@ -327,6 +327,81 @@ static struct wg_parser_stream * CDECL wg_parser_get_stream(struct wg_parser *pa
     return parser->streams[index];
 }
 
+static void CDECL wg_parser_begin_flush(struct wg_parser *parser)
+{
+    unsigned int i;
+
+    pthread_mutex_lock(&parser->mutex);
+    parser->flushing = true;
+    pthread_mutex_unlock(&parser->mutex);
+
+    for (i = 0; i < parser->stream_count; ++i)
+    {
+        if (parser->streams[i]->enabled)
+            pthread_cond_signal(&parser->streams[i]->event_cond);
+    }
+}
+
+static void CDECL wg_parser_end_flush(struct wg_parser *parser)
+{
+    pthread_mutex_lock(&parser->mutex);
+    parser->flushing = false;
+    pthread_mutex_unlock(&parser->mutex);
+}
+
+static void CDECL wg_parser_stream_get_preferred_format(struct wg_parser_stream *stream, struct wg_format *format)
+{
+    *format = stream->preferred_format;
+}
+
+static void CDECL wg_parser_stream_enable(struct wg_parser_stream *stream, const struct wg_format *format)
+{
+    stream->current_format = *format;
+    stream->enabled = true;
+    gst_pad_push_event(stream->my_sink, gst_event_new_reconfigure());
+}
+
+static void CDECL wg_parser_stream_disable(struct wg_parser_stream *stream)
+{
+    stream->enabled = false;
+}
+
+static bool CDECL wg_parser_stream_get_event(struct wg_parser_stream *stream, struct wg_parser_event *event)
+{
+    struct wg_parser *parser = stream->parser;
+
+    pthread_mutex_lock(&parser->mutex);
+
+    while (!parser->flushing && stream->event.type == WG_PARSER_EVENT_NONE)
+        pthread_cond_wait(&stream->event_cond, &parser->mutex);
+
+    if (parser->flushing)
+    {
+        pthread_mutex_unlock(&parser->mutex);
+        TRACE("Filter is flushing.\n");
+        return false;
+    }
+
+    *event = stream->event;
+    stream->event.type = WG_PARSER_EVENT_NONE;
+
+    pthread_mutex_unlock(&parser->mutex);
+    pthread_cond_signal(&stream->event_empty_cond);
+
+    return true;
+}
+
+static void CDECL wg_parser_stream_notify_qos(struct wg_parser_stream *stream,
+        bool underflow, double proportion, int64_t diff, uint64_t timestamp)
+{
+    GstEvent *event;
+
+    if (!(event = gst_event_new_qos(underflow ? GST_QOS_TYPE_UNDERFLOW : GST_QOS_TYPE_OVERFLOW,
+            1000.0 / proportion, diff * 100, timestamp * 100)))
+        ERR("Failed to create QOS event.\n");
+    gst_pad_push_event(stream->my_sink, event);
+}
+
 static GstAutoplugSelectResult autoplug_blacklist(GstElement *bin, GstPad *pad, GstCaps *caps, GstElementFactory *fact, gpointer user)
 {
     const char *name = gst_element_factory_get_longname(fact);
@@ -1478,8 +1553,18 @@ static const struct unix_funcs funcs =
     wg_parser_connect,
     wg_parser_disconnect,
 
+    wg_parser_begin_flush,
+    wg_parser_end_flush,
+
     wg_parser_get_stream_count,
     wg_parser_get_stream,
+
+    wg_parser_stream_get_preferred_format,
+    wg_parser_stream_enable,
+    wg_parser_stream_disable,
+
+    wg_parser_stream_get_event,
+    wg_parser_stream_notify_qos,
 };
 
 NTSTATUS CDECL __wine_init_unix_lib(HMODULE module, DWORD reason, const void *ptr_in, void *ptr_out)
