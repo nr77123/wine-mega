@@ -843,6 +843,7 @@ enable_option_checking
 enable_win16
 enable_win64
 enable_tests
+enable_build_id
 enable_maintainer_mode
 enable_silent_rules
 enable_werror
@@ -1281,9 +1282,9 @@ enable_dplay
 enable_dplayx
 enable_dpmodemx
 enable_dpnaddr
-enable_dpnhupnp
 enable_dpnet
 enable_dpnhpast
+enable_dpnhupnp
 enable_dpnlobby
 enable_dpvacm
 enable_dpvoice
@@ -1300,9 +1301,9 @@ enable_dsuiext
 enable_dswave
 enable_dwmapi
 enable_dwrite
-enable_dxapi_sys
 enable_dx7vb
 enable_dx8vb
+enable_dxapi_sys
 enable_dxdiagn
 enable_dxerr8
 enable_dxerr9
@@ -2621,6 +2622,7 @@ Optional Features:
   --enable-win64          build a Win64 emulator on AMD64 (won't run Win32
                           binaries)
   --disable-tests         do not build the regression tests
+  --enable-build-id       include .buildid section in output objects
   --enable-maintainer-mode
                           enable maintainer-specific build rules
   --enable-silent-rules   use silent build rules (override: "make V=1")
@@ -3954,6 +3956,11 @@ fi
 # Check whether --enable-tests was given.
 if test "${enable_tests+set}" = set; then :
   enableval=$enable_tests;
+fi
+
+# Check whether --enable-build-id was given.
+if test "${enable_build_id+set}" = set; then :
+  enableval=$enable_build_id;
 fi
 
 # Check whether --enable-maintainer-mode was given.
@@ -10828,6 +10835,41 @@ fi
 $as_echo "$ac_cv_crosscflags__Werror" >&6; }
 if test "x$ac_cv_crosscflags__Werror" = xyes; then :
   EXTRACROSSCFLAGS="$EXTRACROSSCFLAGS -Werror"
+fi
+        fi
+        if test "x$enable_build_id" = "xyes"
+        then
+            { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the cross-compiler supports -Wl,--build-id" >&5
+$as_echo_n "checking whether the cross-compiler supports -Wl,--build-id... " >&6; }
+if ${ac_cv_crosscflags__Wl___build_id+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_wine_try_cflags_saved=$CFLAGS
+ac_wine_try_cflags_saved_cc=$CC
+ac_wine_try_cflags_saved_exeext=$ac_exeext
+CFLAGS="$CFLAGS $EXTRACROSSCFLAGS -nostartfiles -nodefaultlibs -Wl,--build-id"
+CC="$CROSSCC"
+ac_exeext=".exe"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+int __cdecl mainCRTStartup(void) { return 0; }
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_crosscflags__Wl___build_id=yes
+else
+  ac_cv_crosscflags__Wl___build_id=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+CFLAGS=$ac_wine_try_cflags_saved
+CC=$ac_wine_try_cflags_saved_cc
+ac_exeext=$ac_wine_try_cflags_saved_exeext
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_crosscflags__Wl___build_id" >&5
+$as_echo "$ac_cv_crosscflags__Wl___build_id" >&6; }
+if test "x$ac_cv_crosscflags__Wl___build_id" = xyes; then :
+  CROSSCFLAGS="$CROSSCFLAGS -Wl,--build-id"
+                            CROSSLDFLAGS="$CROSSLDFLAGS -Wl,--build-id"
 fi
         fi
 
@@ -18135,6 +18177,35 @@ if test "x$ac_cv_cflags__Werror" = xyes; then :
   EXTRACFLAGS="$EXTRACFLAGS -Werror"
 fi
   fi
+  if test "x$enable_build_id" = "xyes"
+  then
+      { $as_echo "$as_me:${as_lineno-$LINENO}: checking whether the compiler supports -Wl,--build-id" >&5
+$as_echo_n "checking whether the compiler supports -Wl,--build-id... " >&6; }
+if ${ac_cv_cflags__Wl___build_id+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  ac_wine_try_cflags_saved=$CFLAGS
+CFLAGS="$CFLAGS -Wl,--build-id"
+cat confdefs.h - <<_ACEOF >conftest.$ac_ext
+/* end confdefs.h.  */
+int main(int argc, char **argv) { return 0; }
+_ACEOF
+if ac_fn_c_try_link "$LINENO"; then :
+  ac_cv_cflags__Wl___build_id=yes
+else
+  ac_cv_cflags__Wl___build_id=no
+fi
+rm -f core conftest.err conftest.$ac_objext \
+    conftest$ac_exeext conftest.$ac_ext
+CFLAGS=$ac_wine_try_cflags_saved
+fi
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_cflags__Wl___build_id" >&5
+$as_echo "$ac_cv_cflags__Wl___build_id" >&6; }
+if test "x$ac_cv_cflags__Wl___build_id" = xyes; then :
+  CFLAGS="$CFLAGS -Wl,--build-id"
+                      LDFLAGS="$LDFLAGS -Wl,--build-id"
+fi
+  fi
 fi
 
 
@@ -20825,10 +20896,10 @@ wine_fn_config_makefile dlls/dplayx enable_dplayx
 wine_fn_config_makefile dlls/dplayx/tests enable_tests
 wine_fn_config_makefile dlls/dpmodemx enable_dpmodemx
 wine_fn_config_makefile dlls/dpnaddr enable_dpnaddr
-wine_fn_config_makefile dlls/dpnhupnp enable_dpnhupnp
 wine_fn_config_makefile dlls/dpnet enable_dpnet
 wine_fn_config_makefile dlls/dpnet/tests enable_tests
 wine_fn_config_makefile dlls/dpnhpast enable_dpnhpast
+wine_fn_config_makefile dlls/dpnhupnp enable_dpnhupnp
 wine_fn_config_makefile dlls/dpnlobby enable_dpnlobby
 wine_fn_config_makefile dlls/dpvacm enable_dpvacm
 wine_fn_config_makefile dlls/dpvoice enable_dpvoice
@@ -20852,9 +20923,9 @@ wine_fn_config_makefile dlls/dwmapi enable_dwmapi
 wine_fn_config_makefile dlls/dwmapi/tests enable_tests
 wine_fn_config_makefile dlls/dwrite enable_dwrite
 wine_fn_config_makefile dlls/dwrite/tests enable_tests
-wine_fn_config_makefile dlls/dxapi.sys enable_dxapi_sys
 wine_fn_config_makefile dlls/dx7vb enable_dx7vb
 wine_fn_config_makefile dlls/dx8vb enable_dx8vb
+wine_fn_config_makefile dlls/dxapi.sys enable_dxapi_sys
 wine_fn_config_makefile dlls/dxdiagn enable_dxdiagn
 wine_fn_config_makefile dlls/dxdiagn/tests enable_tests
 wine_fn_config_makefile dlls/dxerr8 enable_dxerr8

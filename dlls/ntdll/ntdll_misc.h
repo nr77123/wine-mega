@@ -26,6 +26,7 @@
 #include "winnt.h"
 #include "winternl.h"
 #include "unixlib.h"
+#include "wine/debug.h"
 #include "wine/asm.h"
 
 #define DECLARE_CRITICAL_SECTION(cs) \

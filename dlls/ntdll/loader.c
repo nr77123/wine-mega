@@ -2520,7 +2520,7 @@ static NTSTATUS load_so_dll( LPCWSTR load_path, const UNICODE_STRING *nt_name,
  *           load_builtin_dll
  */
 static NTSTATUS load_builtin_dll( LPCWSTR load_path, UNICODE_STRING *nt_name,
-                                  DWORD flags, WINE_MODREF** pwm )
+                                  DWORD flags, WINE_MODREF** pwm, BOOL prefer_native )
 {
     NTSTATUS status;
     void *module, *unix_entry = NULL;
@@ -2528,7 +2528,7 @@ static NTSTATUS load_builtin_dll( LPCWSTR load_path, UNICODE_STRING *nt_name,
 
     TRACE("Trying built-in %s\n", debugstr_us(nt_name));
 
-    status = unix_funcs->load_builtin_dll( nt_name, &module, &unix_entry, &image_info );
+    status = unix_funcs->load_builtin_dll( nt_name, &module, &unix_entry, &image_info, prefer_native );
     if (status) return status;
 
     if ((*pwm = get_modref( module )))  /* already loaded */
@@ -2842,7 +2842,7 @@ static NTSTATUS load_dll( const WCHAR *load_path, const WCHAR *libname, const WC
             case LO_BUILTIN:
             case LO_BUILTIN_NATIVE:
             case LO_DEFAULT:
-                nts = load_builtin_dll( load_path, &nt_name, flags, pwm );
+                nts = load_builtin_dll( load_path, &nt_name, flags, pwm, FALSE );
                 if (nts == STATUS_DLL_NOT_FOUND)
                     nts = load_native_dll( load_path, &nt_name, mapping, &image_info, &id, flags, pwm );
                 break;
@@ -2861,20 +2861,20 @@ static NTSTATUS load_dll( const WCHAR *load_path, const WCHAR *libname, const WC
                 nts = load_native_dll( load_path, &nt_name, mapping, &image_info, &id, flags, pwm );
                 break;
             case LO_BUILTIN:
-                nts = load_builtin_dll( load_path, &nt_name, flags, pwm );
+                nts = load_builtin_dll( load_path, &nt_name, flags, pwm, FALSE );
                 break;
             case LO_BUILTIN_NATIVE:
             case LO_DEFAULT:
-                nts = load_builtin_dll( load_path, &nt_name, flags, pwm );
+                nts = load_builtin_dll( load_path, &nt_name, flags, pwm, loadorder == LO_DEFAULT );
                 if (nts == STATUS_SUCCESS && loadorder == LO_DEFAULT &&
                     (MODULE_InitDLL( *pwm, DLL_WINE_PREATTACH, NULL ) != STATUS_SUCCESS))
                 {
                     /* stub-only dll, try native */
                     TRACE( "%s pre-attach returned FALSE, preferring native\n", debugstr_us(&nt_name) );
                     LdrUnloadDll( (*pwm)->ldr.DllBase );
-                    nts = STATUS_DLL_NOT_FOUND;
+                    nts = STATUS_IMAGE_ALREADY_LOADED;
                 }
-                if (nts == STATUS_DLL_NOT_FOUND)
+                if (nts == STATUS_DLL_NOT_FOUND || nts == STATUS_IMAGE_ALREADY_LOADED)
                     nts = load_native_dll( load_path, &nt_name, mapping, &image_info, &id, flags, pwm );
                 break;
             default:
@@ -2893,7 +2893,7 @@ static NTSTATUS load_dll( const WCHAR *load_path, const WCHAR *libname, const WC
         case LO_BUILTIN:
         case LO_BUILTIN_NATIVE:
         case LO_DEFAULT:
-            nts = load_builtin_dll( load_path, &nt_name, flags, pwm );
+            nts = load_builtin_dll( load_path, &nt_name, flags, pwm, FALSE );
             break;
         default:
             nts = STATUS_DLL_NOT_FOUND;
@@ -4272,7 +4272,7 @@ static NTSTATUS process_init(void)
     }
 
     RtlInitUnicodeString( &nt_name, L"\\??\\C:\\windows\\system32\\wow64cpu.dll" );
-    if ((status = load_builtin_dll( NULL, &nt_name, 0, &wow64cpu_wm )) == STATUS_SUCCESS)
+    if ((status = load_builtin_dll( NULL, &nt_name, 0, &wow64cpu_wm, FALSE )) == STATUS_SUCCESS)
         Wow64Transition = wow64cpu_wm->ldr.DllBase;
     else
         WARN( "could not load wow64cpu.dll, status %#x\n", status );

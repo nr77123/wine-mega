@@ -64,7 +64,7 @@ struct unix_funcs
     /* loader functions */
     NTSTATUS      (CDECL *load_so_dll)( UNICODE_STRING *nt_name, void **module );
     NTSTATUS      (CDECL *load_builtin_dll)( UNICODE_STRING *name, void **module, void **unix_entry,
-                                             SECTION_IMAGE_INFORMATION *image_info );
+                                             SECTION_IMAGE_INFORMATION *image_info, BOOL prefer_native );
     NTSTATUS      (CDECL *unload_builtin_dll)( void *module );
     void          (CDECL *init_builtin_dll)( void *module );
     NTSTATUS      (CDECL *unwind_builtin_dll)( ULONG type, struct _DISPATCHER_CONTEXT *dispatch,

@@ -1346,8 +1346,8 @@ static void dump_varargs_handle_infos( const char *prefix, data_size_t size )
     while (size >= sizeof(*handle))
     {
         handle = cur_data;
-        fprintf( stderr, "{owner=%04x,handle=%04x,access=%08x}",
-                 handle->owner, handle->handle, handle->access );
+        fprintf( stderr, "{owner=%04x,handle=%04x,access=%08x,attributes=%08x,type=%u}",
+                 handle->owner, handle->handle, handle->access, handle->attributes, handle->type );
         size -= sizeof(*handle);
         remove_data( sizeof(*handle) );
         if (size) fputc( ',', stderr );
@@ -2423,7 +2423,9 @@ static void dump_load_registry_request( const struct load_registry_request *req 
 
 static void dump_unload_registry_request( const struct unload_registry_request *req )
 {
-    fprintf( stderr, " hkey=%04x", req->hkey );
+    fprintf( stderr, " parent=%04x", req->parent );
+    fprintf( stderr, ", attributes=%08x", req->attributes );
+    dump_varargs_unicode_str( ", name=", cur_size );
 }
 
 static void dump_save_registry_request( const struct save_registry_request *req )
@@ -4069,16 +4071,6 @@ static void dump_get_object_types_reply( const struct get_object_types_reply *re
     dump_varargs_object_types_info( ", info=", cur_size );
 }
 
-static void dump_get_token_impersonation_level_request( const struct get_token_impersonation_level_request *req )
-{
-    fprintf( stderr, " handle=%04x", req->handle );
-}
-
-static void dump_get_token_impersonation_level_reply( const struct get_token_impersonation_level_reply *req )
-{
-    fprintf( stderr, " impersonation_level=%d", req->impersonation_level );
-}
-
 static void dump_allocate_locally_unique_id_request( const struct allocate_locally_unique_id_request *req )
 {
 }
@@ -4182,19 +4174,30 @@ static void dump_make_process_system_reply( const struct make_process_system_rep
     fprintf( stderr, " event=%04x", req->event );
 }
 
-static void dump_get_token_statistics_request( const struct get_token_statistics_request *req )
+static void dump_get_token_info_request( const struct get_token_info_request *req )
 {
     fprintf( stderr, " handle=%04x", req->handle );
 }
 
-static void dump_get_token_statistics_reply( const struct get_token_statistics_reply *req )
+static void dump_get_token_info_reply( const struct get_token_info_reply *req )
 {
     dump_luid( " token_id=", &req->token_id );
     dump_luid( ", modified_id=", &req->modified_id );
     fprintf( stderr, ", primary=%d", req->primary );
     fprintf( stderr, ", impersonation_level=%d", req->impersonation_level );
+    fprintf( stderr, ", elevation=%d", req->elevation );
     fprintf( stderr, ", group_count=%d", req->group_count );
     fprintf( stderr, ", privilege_count=%d", req->privilege_count );
+}
+
+static void dump_create_linked_token_request( const struct create_linked_token_request *req )
+{
+    fprintf( stderr, " handle=%04x", req->handle );
+}
+
+static void dump_create_linked_token_reply( const struct create_linked_token_reply *req )
+{
+    fprintf( stderr, " linked=%04x", req->linked );
 }
 
 static void dump_create_completion_request( const struct create_completion_request *req )
@@ -4755,7 +4758,6 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_get_object_info_request,
     (dump_func)dump_get_object_type_request,
     (dump_func)dump_get_object_types_request,
-    (dump_func)dump_get_token_impersonation_level_request,
     (dump_func)dump_allocate_locally_unique_id_request,
     (dump_func)dump_create_device_manager_request,
     (dump_func)dump_create_device_request,
@@ -4767,7 +4769,8 @@ static const dump_func req_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_release_kernel_object_request,
     (dump_func)dump_get_kernel_object_handle_request,
     (dump_func)dump_make_process_system_request,
-    (dump_func)dump_get_token_statistics_request,
+    (dump_func)dump_get_token_info_request,
+    (dump_func)dump_create_linked_token_request,
     (dump_func)dump_create_completion_request,
     (dump_func)dump_open_completion_request,
     (dump_func)dump_add_completion_request,
@@ -5039,7 +5042,6 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] = {
     (dump_func)dump_get_object_info_reply,
     (dump_func)dump_get_object_type_reply,
     (dump_func)dump_get_object_types_reply,
-    (dump_func)dump_get_token_impersonation_level_reply,
     (dump_func)dump_allocate_locally_unique_id_reply,
     (dump_func)dump_create_device_manager_reply,
     NULL,
@@ -5051,7 +5053,8 @@ static const dump_func reply_dumpers[REQ_NB_REQUESTS] = {
     NULL,
     (dump_func)dump_get_kernel_object_handle_reply,
     (dump_func)dump_make_process_system_reply,
-    (dump_func)dump_get_token_statistics_reply,
+    (dump_func)dump_get_token_info_reply,
+    (dump_func)dump_create_linked_token_reply,
     (dump_func)dump_create_completion_reply,
     (dump_func)dump_open_completion_reply,
     NULL,
@@ -5323,7 +5326,6 @@ static const char * const req_names[REQ_NB_REQUESTS] = {
     "get_object_info",
     "get_object_type",
     "get_object_types",
-    "get_token_impersonation_level",
     "allocate_locally_unique_id",
     "create_device_manager",
     "create_device",
@@ -5335,7 +5337,8 @@ static const char * const req_names[REQ_NB_REQUESTS] = {
     "release_kernel_object",
     "get_kernel_object_handle",
     "make_process_system",
-    "get_token_statistics",
+    "get_token_info",
+    "create_linked_token",
     "create_completion",
     "open_completion",
     "add_completion",

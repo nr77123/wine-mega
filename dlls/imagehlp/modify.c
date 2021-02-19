@@ -31,11 +31,9 @@ WINE_DEFAULT_DEBUG_CHANNEL(imagehlp);
 
 static WORD CalcCheckSum(DWORD StartValue, LPVOID BaseAddress, DWORD WordCount);
 
+
 /***********************************************************************
  *		BindImage (IMAGEHLP.@)
- *
- * NOTES
- *   See BindImageEx
  */
 BOOL WINAPI BindImage(
   PCSTR ImageName, PCSTR DllPath, PCSTR SymbolPath)
@@ -45,24 +43,6 @@ BOOL WINAPI BindImage(
 
 /***********************************************************************
  *		BindImageEx (IMAGEHLP.@)
- *
- * Compute the virtual address of each function imported by a PE image
- *
- * PARAMS
- *
- *   Flags         [in] Bind options
- *   ImageName     [in] File name of the image to be bound
- *   DllPath       [in] Root of the fallback search path in case the ImageName file cannot be opened
- *   SymbolPath    [in] Symbol file root search path
- *   StatusRoutine [in] Pointer to a status routine which will be called during the binding process
- *
- * RETURNS
- *   Success: TRUE
- *   Failure: FALSE
- *
- * NOTES
- *  Binding is not implemented yet, so far this function only enumerates
- *  all imported dlls/functions and returns TRUE.
  */
 BOOL WINAPI BindImageEx(DWORD flags, const char *module, const char *dll_path,
         const char *symbol_path, PIMAGEHLP_STATUS_ROUTINE cb)
