@@ -2492,6 +2492,15 @@ void signal_init_process(void)
     exit(1);
 }
 
+
+/**********************************************************************
+ *		signal_init_syscalls
+ */
+void *signal_init_syscalls(void)
+{
+    return __wine_syscall_dispatcher;
+}
+
 /**********************************************************************
  *    signal_init_early
  */
