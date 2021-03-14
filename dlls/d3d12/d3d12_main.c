@@ -265,7 +265,9 @@ static VkPhysicalDevice d3d12_get_vk_physical_device(struct vkd3d_instance *inst
     if ((vr = pfn_vkEnumeratePhysicalDevices(vk_instance, &count, vk_physical_devices)) < 0)
         goto done;
 
-    if (!IsEqualGUID(&adapter_info->driver_uuid, &GUID_NULL) && pfn_vkGetPhysicalDeviceProperties2)
+    if (!IsEqualGUID(&adapter_info->driver_uuid, &GUID_NULL) && pfn_vkGetPhysicalDeviceProperties2
+            && check_vk_instance_extension(vk_instance, pfn_vkGetInstanceProcAddr,
+                    VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME))
     {
         TRACE("Matching adapters by UUIDs.\n");
 
@@ -331,17 +333,26 @@ HRESULT WINAPI D3D12CreateDevice(IUnknown *adapter, D3D_FEATURE_LEVEL minimum_fe
     };
     static const char * const optional_instance_extensions[] =
     {
+        VK_KHR_EXTERNAL_MEMORY_CAPABILITIES_EXTENSION_NAME,
         VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
     };
     static const char * const device_extensions[] =
     {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
     };
+#ifdef SONAME_LIBVKD3D_PROTON
+    static const struct VkApplicationInfo application_info =
+    {
+        .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO,
+        .apiVersion = VK_API_VERSION_1_2,
+    };
+#else
     static const struct vkd3d_application_info application_info =
     {
         .type = VKD3D_STRUCTURE_TYPE_APPLICATION_INFO,
-        .engine_version = VKD3D_API_VERSION_1_2,
+        .api_version = VKD3D_API_VERSION_1_2,
     };
+#endif
 
     TRACE("adapter %p, minimum_feature_level %#x, iid %s, device %p.\n",
             adapter, minimum_feature_level, debugstr_guid(iid), device);
@@ -371,7 +382,6 @@ HRESULT WINAPI D3D12CreateDevice(IUnknown *adapter, D3D_FEATURE_LEVEL minimum_fe
     instance_create_info.pfn_signal_event = d3d12_signal_event;
     instance_create_info.pfn_create_thread = d3d12_create_thread;
     instance_create_info.pfn_join_thread = d3d12_join_thread;
-    instance_create_info.wchar_size = sizeof(WCHAR);
     instance_create_info.pfn_vkGetInstanceProcAddr = pfn_vkGetInstanceProcAddr;
     instance_create_info.instance_extensions = instance_extensions;
     instance_create_info.instance_extension_count = ARRAY_SIZE(instance_extensions);

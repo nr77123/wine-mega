@@ -49,7 +49,6 @@
 #include "request.h"
 #include "user.h"
 #include "security.h"
-#include "esync.h"
 
 /* process object */
 
@@ -82,7 +81,6 @@ static struct security_descriptor *process_get_sd( struct object *obj );
 static void process_poll_event( struct fd *fd, int event );
 static struct list *process_get_kernel_obj_list( struct object *obj );
 static void process_destroy( struct object *obj );
-static int process_get_esync_fd( struct object *obj, enum esync_type *type );
 static void terminate_process( struct process *process, struct thread *skip, int exit_code );
 
 static const struct object_ops process_ops =
@@ -93,7 +91,6 @@ static const struct object_ops process_ops =
     add_queue,                   /* add_queue */
     remove_queue,                /* remove_queue */
     process_signaled,            /* signaled */
-    process_get_esync_fd,        /* get_esync_fd */
     no_satisfied,                /* satisfied */
     no_signal,                   /* signal */
     no_get_fd,                   /* get_fd */
@@ -145,7 +142,6 @@ static const struct object_ops startup_info_ops =
     add_queue,                     /* add_queue */
     remove_queue,                  /* remove_queue */
     startup_info_signaled,         /* signaled */
-    NULL,                          /* get_esync_fd */
     no_satisfied,                  /* satisfied */
     no_signal,                     /* signal */
     no_get_fd,                     /* get_fd */
@@ -204,7 +200,6 @@ static const struct object_ops job_ops =
     add_queue,                     /* add_queue */
     remove_queue,                  /* remove_queue */
     job_signaled,                  /* signaled */
-    NULL,                          /* get_esync_fd */
     no_satisfied,                  /* satisfied */
     no_signal,                     /* signal */
     no_get_fd,                     /* get_fd */
@@ -541,6 +536,8 @@ struct process *create_process( int fd, struct process *parent, int inherit_all,
     process->is_system       = 0;
     process->debug_children  = 1;
     process->is_terminating  = 0;
+    process->imagelen        = 0;
+    process->image           = NULL;
     process->job             = NULL;
     process->console         = NULL;
     process->startup_state   = STARTUP_IN_PROGRESS;
@@ -555,7 +552,6 @@ struct process *create_process( int fd, struct process *parent, int inherit_all,
     process->trace_data      = 0;
     process->rawinput_mouse  = NULL;
     process->rawinput_kbd    = NULL;
-    process->esync_fd        = -1;
     list_init( &process->kernel_object );
     list_init( &process->thread_list );
     list_init( &process->locks );
@@ -565,7 +561,6 @@ struct process *create_process( int fd, struct process *parent, int inherit_all,
     list_init( &process->rawinput_devices );
 
     process->end_time = 0;
-    list_add_tail( &process_list, &process->entry );
 
     if (sd && !default_set_sd( &process->obj, sd, OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION |
                                DACL_SECURITY_INFORMATION | SACL_SECURITY_INFORMATION ))
@@ -611,9 +606,6 @@ struct process *create_process( int fd, struct process *parent, int inherit_all,
     if (!token_assign_label( process->token, security_high_label_sid ))
         goto error;
 
-    if (do_esync())
-        process->esync_fd = esync_create_fd( 0, 0 );
-
     set_fd_events( process->msg_fd, POLLIN );  /* start listening to events */
     return process;
 
@@ -655,12 +647,11 @@ static void process_destroy( struct object *obj )
     }
     if (process->console) release_object( process->console );
     if (process->msg_fd) release_object( process->msg_fd );
-    list_remove( &process->entry );
     if (process->idle_event) release_object( process->idle_event );
     if (process->id) free_ptid( process->id );
     if (process->token) release_object( process->token );
     free( process->dir_cache );
-    if (do_esync()) close( process->esync_fd );
+    free( process->image );
 }
 
 /* dump a process on stdout for debugging purposes */
@@ -676,13 +667,6 @@ static int process_signaled( struct object *obj, struct wait_queue_entry *entry 
 {
     struct process *process = (struct process *)obj;
     return !process->running_threads;
-}
-
-static int process_get_esync_fd( struct object *obj, enum esync_type *type )
-{
-    struct process *process = (struct process *)obj;
-    *type = ESYNC_MANUAL_SERVER;
-    return process->esync_fd;
 }
 
 static unsigned int process_map_access( struct object *obj, unsigned int access )
@@ -821,15 +805,11 @@ restart:
 /* kill all processes */
 static void kill_all_processes(void)
 {
-    for (;;)
-    {
-        struct process *process;
+    struct list *ptr;
 
-        LIST_FOR_EACH_ENTRY( process, &process_list, struct process, entry )
-        {
-            if (process->running_threads) break;
-        }
-        if (&process->entry == &process_list) break;  /* no process found */
+    while ((ptr = list_head( &process_list )))
+    {
+        struct process *process = LIST_ENTRY( ptr, struct process, entry );
         terminate_process( process, NULL, 1 );
     }
 }
@@ -845,7 +825,6 @@ void kill_console_processes( struct thread *renderer, int exit_code )
         LIST_FOR_EACH_ENTRY( process, &process_list, struct process, entry )
         {
             if (process == renderer->process) continue;
-            if (!process->running_threads) continue;
             if (process->console && console_get_renderer( process->console ) == renderer) break;
         }
         if (&process->entry == &process_list) break;  /* no process found */
@@ -892,6 +871,7 @@ void add_process_thread( struct process *process, struct thread *thread )
     list_add_tail( &process->thread_list, &thread->proc_entry );
     if (!process->running_threads++)
     {
+        list_add_tail( &process_list, &process->entry );
         running_processes++;
         if (!process->is_system)
         {
@@ -918,6 +898,7 @@ void remove_process_thread( struct process *process, struct thread *thread )
         /* we have removed the last running thread, exit the process */
         process->exit_code = thread->exit_code;
         generate_debug_event( thread, DbgExitProcessStateChange, process );
+        list_remove( &process->entry );
         process_killed( process );
     }
     else generate_debug_event( thread, DbgExitThreadStateChange, thread );
@@ -996,10 +977,8 @@ void detach_debugged_processes( struct debug_obj *debug_obj, int exit_code )
 
         /* find the first process being debugged by 'debugger' and still running */
         LIST_FOR_EACH_ENTRY( process, &process_list, struct process, entry )
-        {
-            if (!process->running_threads) continue;
             if (process->debug_obj == debug_obj) break;
-        }
+
         if (&process->entry == &process_list) break;  /* no process found */
         if (exit_code)
         {
@@ -1382,8 +1361,12 @@ DECL_HANDLER(get_process_info)
             client_ptr_t base;
             const pe_image_info_t *info;
             struct memory_view *view = get_exe_view( process );
-            if (view && (info = get_view_image_info( view, &base )))
-                set_reply_data( info, min( sizeof(*info), get_reply_max_size() ));
+            if (view)
+            {
+                if ((info = get_view_image_info( view, &base )))
+                    set_reply_data( info, min( sizeof(*info), get_reply_max_size() ));
+            }
+            else set_error( STATUS_PROCESS_IS_TERMINATING );
         }
         release_object( process );
     }
@@ -1405,13 +1388,12 @@ DECL_HANDLER(get_process_debug_info)
 /* fetch the name of the process image */
 DECL_HANDLER(get_process_image_name)
 {
-    struct unicode_str name;
-    struct memory_view *view;
     struct process *process = get_process_from_handle( req->handle, PROCESS_QUERY_LIMITED_INFORMATION );
 
     if (!process) return;
-    if ((view = get_exe_view( process )) && get_view_nt_name( view, &name ))
+    if (process->image)
     {
+        struct unicode_str name = { process->image, process->imagelen };
         /* skip the \??\ prefix */
         if (req->win32 && name.len > 6 * sizeof(WCHAR) && name.str[5] == ':')
         {
@@ -1748,7 +1730,6 @@ DECL_HANDLER(list_processes)
 {
     struct process *process;
     struct thread *thread;
-    struct unicode_str nt_name;
     unsigned int pos = 0;
     char *buffer;
 
@@ -1757,10 +1738,8 @@ DECL_HANDLER(list_processes)
 
     LIST_FOR_EACH_ENTRY( process, &process_list, struct process, entry )
     {
-        struct memory_view *view = get_exe_view( process );
-        if (!view || !get_view_nt_name( view, &nt_name )) nt_name.len = 0;
         reply->info_size = (reply->info_size + 7) & ~7;
-        reply->info_size += sizeof(struct process_info) + nt_name.len;
+        reply->info_size += sizeof(struct process_info) + process->imagelen;
         reply->info_size = (reply->info_size + 7) & ~7;
         reply->info_size += process->running_threads * sizeof(struct thread_info);
         reply->process_count++;
@@ -1778,13 +1757,11 @@ DECL_HANDLER(list_processes)
     LIST_FOR_EACH_ENTRY( process, &process_list, struct process, entry )
     {
         struct process_info *process_info;
-        struct memory_view *view = get_exe_view( process );
 
         pos = (pos + 7) & ~7;
-        if (!view || !get_view_nt_name( view, &nt_name )) nt_name.len = 0;
         process_info = (struct process_info *)(buffer + pos);
         process_info->start_time = process->start_time;
-        process_info->name_len = nt_name.len;
+        process_info->name_len = process->imagelen;
         process_info->thread_count = process->running_threads;
         process_info->priority = process->priority;
         process_info->pid = process->id;
@@ -1792,8 +1769,8 @@ DECL_HANDLER(list_processes)
         process_info->handle_count = get_handle_table_count(process);
         process_info->unix_pid = process->unix_pid;
         pos += sizeof(*process_info);
-        memcpy( buffer + pos, nt_name.str, nt_name.len );
-        pos += nt_name.len;
+        memcpy( buffer + pos, process->image, process->imagelen );
+        pos += process->imagelen;
         pos = (pos + 7) & ~7;
         LIST_FOR_EACH_ENTRY( thread, &process->thread_list, struct thread, proc_entry )
         {

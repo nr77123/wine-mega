@@ -369,7 +369,7 @@ CAPTION "Run"
 FONT 8, "MS Shell Dlg"
 {
  ICON "", IDC_RUNDLG_ICON, 7, 11, 18, 20, WS_VISIBLE
- LTEXT "Type the name of a program, folder, document, or Internet resource, and Wine will open it for you.", IDC_RUNDLG_DESCRIPTION, 36, 11, 182, 18
+ LTEXT "Type the name of a program, folder, document, or Internet resource, and Wine will open it for you.", IDC_RUNDLG_DESCRIPTION, 45, 8, 194, 28
  LTEXT "&Open:", IDC_RUNDLG_LABEL, 7, 39, 35, 10
  CONTROL "", IDC_RUNDLG_EDITPATH, "COMBOBOX", WS_TABSTOP | WS_GROUP | WS_VSCROLL | WS_VISIBLE | CBS_DISABLENOSCROLL | CBS_AUTOHSCROLL | CBS_DROPDOWN, 45, 37, 185, 100
  DEFPUSHBUTTON "OK", IDOK, 72, 63, 50, 14, WS_TABSTOP
@@ -1116,14 +1116,6 @@ IDB_TB_SMALL_LIGHT BITMAP resources/idb_tb_small.bmp
 
 /* @makedep: resources/idb_tb_small.bmp */
 IDB_TB_SMALL_DARK BITMAP resources/idb_tb_small.bmp
-
-/* @makedep: resources/ietoolbar.bmp */
-204 BITMAP resources/ietoolbar.bmp
-205 BITMAP resources/ietoolbar.bmp
-
-/* @makedep: resources/ietoolbar_small.bmp */
-206 BITMAP resources/ietoolbar_small.bmp
-207 BITMAP resources/ietoolbar_small.bmp
 
 /* @makedep: resources/searching.avi */
 IDR_AVI_SEARCHING AVI resources/searching.avi

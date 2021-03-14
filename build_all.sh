@@ -28,6 +28,8 @@ git submodule update --init --recursive &&
 		cd subprojects &&
 		(
 			cd Vulkan-Headers &&
+			git reset --hard &&
+			git clean -fd &&
 			git pull origin master &&
 			cmake -DCMAKE_INSTALL_PREFIX="${PREFIX}" . &&
 			make install &&
@@ -35,6 +37,8 @@ git submodule update --init --recursive &&
 		) &&
 		(
 			cd SPIRV-Headers &&
+			git reset --hard &&
+			git clean -fd &&
 			git pull origin master &&
 			cmake -DCMAKE_INSTALL_PREFIX="${PREFIX}" . &&
 			make install &&
@@ -42,6 +46,8 @@ git submodule update --init --recursive &&
 		) &&
 		(
 			cd dxil-spirv &&
+			git reset --hard &&
+			git clean -fd &&
 			git pull origin master &&
 			mkdir -p build &&
 			cd build &&
@@ -52,6 +58,9 @@ git submodule update --init --recursive &&
 		)
 		cd ..
 	) &&
+	git reset --hard &&
+	git clean -fd &&
+	git pull origin master &&
 	meson --buildtype release --prefix "${PREFIX}" build.64 &&
 	ninja -C build.64 &&
 	ninja -C build.64 install &&

@@ -172,8 +172,9 @@ struct srw_lock
      * RtlAcquireSRWLockShared() needs to know the values of "exclusive_waiters"
      * and "owners", but RtlAcquireSRWLockExclusive() only needs to know the
      * value of "owners", so the former can wait on the entire structure, and
-     * the latterwaits only on the "owners" member. Note then that "owners" must be
-     * not be the first element in the structure. */
+     * the latter waits only on the "owners" member. Note then that "owners"
+     * must not be the first element in the structure.
+     */
     short owners;
 };
 C_ASSERT( sizeof(struct srw_lock) == 4 );
@@ -740,7 +741,7 @@ static inline NTSTATUS wait_semaphore( RTL_CRITICAL_SECTION *crit, int timeout )
         {
             static const int zero;
             /* this may wait longer than specified in case of multiple wake-ups */
-            if (RtlWaitOnAddress( (int *)&crit->LockSemaphore, &zero, sizeof(int), &time ) == STATUS_TIMEOUT)
+            if (RtlWaitOnAddress( lock, &zero, sizeof(int), &time ) == STATUS_TIMEOUT)
                 return STATUS_TIMEOUT;
         }
         return STATUS_WAIT_0;
@@ -917,7 +918,7 @@ NTSTATUS WINAPI RtlpUnWaitCriticalSection( RTL_CRITICAL_SECTION *crit )
     else
     {
         int *lock = (int *)&crit->LockSemaphore;
-        *lock = 1;
+        InterlockedExchange( lock, 1 );
         RtlWakeAddressSingle( lock );
         ret = STATUS_SUCCESS;
     }

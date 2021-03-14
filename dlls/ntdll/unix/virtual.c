@@ -2677,7 +2677,6 @@ static void init_teb( TEB *teb, PEB *peb )
             PtrToUlong( &teb64->ActivationContextStack.FrameListCache );
     teb64->StaticUnicodeString.Buffer = PtrToUlong( teb64->StaticUnicodeBuffer );
     teb64->StaticUnicodeString.MaximumLength = sizeof( teb64->StaticUnicodeBuffer );
-    teb->WOW32Reserved = __wine_syscall_dispatcher;
 #endif
     teb->Peb = peb;
     teb->Tib.Self = &teb->Tib;
@@ -2687,7 +2686,6 @@ static void init_teb( TEB *teb, PEB *peb )
     InitializeListHead( &teb->ActivationContextStack.FrameListCache );
     teb->StaticUnicodeString.Buffer = teb->StaticUnicodeBuffer;
     teb->StaticUnicodeString.MaximumLength = sizeof(teb->StaticUnicodeBuffer);
-    thread_data->esync_apc_fd = -1;
     thread_data->request_fd = -1;
     thread_data->reply_fd   = -1;
     thread_data->wait_fd[0] = -1;

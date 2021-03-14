@@ -51,7 +51,6 @@
 #include "request.h"
 #include "user.h"
 #include "security.h"
-#include "esync.h"
 
 
 #ifdef __i386__
@@ -111,7 +110,6 @@ static const struct object_ops thread_apc_ops =
     add_queue,                  /* add_queue */
     remove_queue,               /* remove_queue */
     thread_apc_signaled,        /* signaled */
-    NULL,                       /* get_esync_fd */
     no_satisfied,               /* satisfied */
     no_signal,                  /* signal */
     no_get_fd,                  /* get_fd */
@@ -149,7 +147,6 @@ static const struct object_ops context_ops =
     add_queue,                  /* add_queue */
     remove_queue,               /* remove_queue */
     context_signaled,           /* signaled */
-    NULL,                       /* get_esync_fd */
     no_satisfied,               /* satisfied */
     no_signal,                  /* signal */
     no_get_fd,                  /* get_fd */
@@ -186,7 +183,6 @@ struct type_descr thread_type =
 
 static void dump_thread( struct object *obj, int verbose );
 static int thread_signaled( struct object *obj, struct wait_queue_entry *entry );
-static int thread_get_esync_fd( struct object *obj, enum esync_type *type );
 static unsigned int thread_map_access( struct object *obj, unsigned int access );
 static void thread_poll_event( struct fd *fd, int event );
 static struct list *thread_get_kernel_obj_list( struct object *obj );
@@ -200,7 +196,6 @@ static const struct object_ops thread_ops =
     add_queue,                  /* add_queue */
     remove_queue,               /* remove_queue */
     thread_signaled,            /* signaled */
-    thread_get_esync_fd,        /* get_esync_fd */
     no_satisfied,               /* satisfied */
     no_signal,                  /* signal */
     no_get_fd,                  /* get_fd */
@@ -240,8 +235,6 @@ static inline void init_thread_structure( struct thread *thread )
     thread->context         = NULL;
     thread->teb             = 0;
     thread->entry_point     = 0;
-    thread->esync_fd        = -1;
-    thread->esync_apc_fd    = -1;
     thread->system_regs     = 0;
     thread->queue           = NULL;
     thread->wait            = NULL;
@@ -377,12 +370,6 @@ struct thread *create_thread( int fd, struct process *process, const struct secu
         return NULL;
     }
 
-    if (do_esync())
-    {
-        thread->esync_fd = esync_create_fd( 0, 0 );
-        thread->esync_apc_fd = esync_create_fd( 0, 0 );
-    }
-
     set_fd_events( thread->request_fd, POLLIN );  /* start listening to events */
     add_process_thread( thread->process, thread );
     return thread;
@@ -462,9 +449,6 @@ static void destroy_thread( struct object *obj )
     if (thread->exit_poll) remove_timeout_user( thread->exit_poll );
     if (thread->id) free_ptid( thread->id );
     if (thread->token) release_object( thread->token );
-
-    if (do_esync())
-        close( thread->esync_fd );
 }
 
 /* dump a thread on stdout for debugging purposes */
@@ -481,13 +465,6 @@ static int thread_signaled( struct object *obj, struct wait_queue_entry *entry )
 {
     struct thread *mythread = (struct thread *)obj;
     return mythread->state == TERMINATED && !mythread->exit_poll;
-}
-
-static int thread_get_esync_fd( struct object *obj, enum esync_type *type )
-{
-    struct thread *thread = (struct thread *)obj;
-    *type = ESYNC_MANUAL_SERVER;
-    return thread->esync_fd;
 }
 
 static unsigned int thread_map_access( struct object *obj, unsigned int access )
@@ -515,8 +492,16 @@ static int thread_apc_signaled( struct object *obj, struct wait_queue_entry *ent
 static void thread_apc_destroy( struct object *obj )
 {
     struct thread_apc *apc = (struct thread_apc *)obj;
+
     if (apc->caller) release_object( apc->caller );
-    if (apc->owner) release_object( apc->owner );
+    if (apc->owner)
+    {
+        if (apc->result.type == APC_ASYNC_IO)
+            async_set_result( apc->owner, apc->result.async_io.status, apc->result.async_io.total );
+        else if (apc->call.type == APC_ASYNC_IO)
+            async_set_result( apc->owner, apc->call.async_io.status, 0 );
+        release_object( apc->owner );
+    }
 }
 
 /* queue an async procedure call */
@@ -635,10 +620,7 @@ static void set_thread_info( struct thread *thread,
         if ((req->priority >= min && req->priority <= max) ||
             req->priority == THREAD_PRIORITY_IDLE ||
             req->priority == THREAD_PRIORITY_TIME_CRITICAL)
-        {
             thread->priority = req->priority;
-            set_scheduler_priority( thread );
-        }
         else
             set_error( STATUS_INVALID_PARAMETER );
     }
@@ -1068,9 +1050,6 @@ void wake_up( struct object *obj, int max )
     struct list *ptr;
     int ret;
 
-    if (do_esync())
-        esync_wake_up( obj );
-
     LIST_FOR_EACH( ptr, &obj->wait_queue )
     {
         struct wait_queue_entry *entry = LIST_ENTRY( ptr, struct wait_queue_entry, entry );
@@ -1155,12 +1134,7 @@ static int queue_apc( struct process *process, struct thread *thread, struct thr
     grab_object( apc );
     list_add_tail( queue, &apc->entry );
     if (!list_prev( queue, &apc->entry ))  /* first one */
-    {
         wake_thread( thread );
-
-        if (do_esync() && queue == &thread->user_apc)
-            esync_wake_fd( thread->esync_apc_fd );
-    }
 
     return 1;
 }
@@ -1207,10 +1181,6 @@ static struct thread_apc *thread_dequeue_apc( struct thread *thread, int system 
         apc = LIST_ENTRY( ptr, struct thread_apc, entry );
         list_remove( ptr );
     }
-
-    if (do_esync() && list_empty( &thread->system_apc ) && list_empty( &thread->user_apc ))
-        esync_clear( thread->esync_apc_fd );
-
     return apc;
 }
 
@@ -1326,8 +1296,6 @@ void kill_thread( struct thread *thread, int violent_death )
     }
     kill_console_processes( thread, 0 );
     abandon_mutexes( thread );
-    if (do_esync())
-        esync_abandon_mutexes( thread );
     if (violent_death)
     {
         send_thread_signal( thread, SIGQUIT );
@@ -1715,11 +1683,6 @@ DECL_HANDLER(select)
             apc->result.create_thread.handle = handle;
             clear_error();  /* ignore errors from the above calls */
         }
-        else if (apc->result.type == APC_ASYNC_IO)
-        {
-            if (apc->owner)
-                async_set_result( apc->owner, apc->result.async_io.status, apc->result.async_io.total );
-        }
         wake_up( &apc->obj, 0 );
         close_handle( current->process, req->prev_apc );
         release_object( apc );
@@ -1826,7 +1789,7 @@ DECL_HANDLER(queue_apc)
 
     if (thread)
     {
-        if (!queue_apc( NULL, thread, apc )) set_error( STATUS_THREAD_IS_TERMINATING );
+        if (!queue_apc( NULL, thread, apc )) set_error( STATUS_UNSUCCESSFUL );
         release_object( thread );
     }
     else if (process)
@@ -1953,8 +1916,7 @@ DECL_HANDLER(set_thread_context)
     reply->self = (thread == current);
 
     if (thread->state == TERMINATED) set_error( STATUS_UNSUCCESSFUL );
-    else if (context->cpu != thread->process->cpu) set_error( STATUS_INVALID_PARAMETER );
-    else
+    else if (context->cpu == thread->process->cpu)
     {
         unsigned int system_flags = get_context_system_regs(context->cpu) & context->flags;
 
@@ -1966,6 +1928,25 @@ DECL_HANDLER(set_thread_context)
             thread->context->regs.flags |= context->flags;
         }
     }
+    else if (context->cpu == CPU_x86_64 && thread->process->cpu == CPU_x86)
+    {
+        /* convert the WoW64 context */
+        unsigned int system_flags = get_context_system_regs( context->cpu ) & context->flags;
+        if (system_flags)
+        {
+            set_thread_context( thread, context, system_flags );
+            if (thread->context && !get_error())
+            {
+                thread->context->regs.debug.i386_regs.dr0 = context->debug.x86_64_regs.dr0;
+                thread->context->regs.debug.i386_regs.dr1 = context->debug.x86_64_regs.dr1;
+                thread->context->regs.debug.i386_regs.dr2 = context->debug.x86_64_regs.dr2;
+                thread->context->regs.debug.i386_regs.dr3 = context->debug.x86_64_regs.dr3;
+                thread->context->regs.debug.i386_regs.dr6 = context->debug.x86_64_regs.dr6;
+                thread->context->regs.debug.i386_regs.dr7 = context->debug.x86_64_regs.dr7;
+            }
+        }
+    }
+    else set_error( STATUS_INVALID_PARAMETER );
 
     release_object( thread );
 }

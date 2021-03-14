@@ -1,7 +1,6 @@
-MODULE  = cryptext.dll
-IMPORTS = crypt32 cryptui user32
+MODULE = cryptext.dll
 
-EXTRADLLFLAGS = -mno-cygwin
+EXTRADLLFLAGS = -mno-cygwin -Wb,--prefer-native
 
 C_SRCS = \
 	cryptext_main.c

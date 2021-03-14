@@ -84,6 +84,7 @@
 @ cdecl wined3d_device_get_hs_resource_view(ptr long)
 @ cdecl wined3d_device_get_hs_sampler(ptr long)
 @ cdecl wined3d_device_get_hull_shader(ptr)
+@ cdecl wined3d_device_get_immediate_context(ptr)
 @ cdecl wined3d_device_get_index_buffer(ptr ptr ptr)
 @ cdecl wined3d_device_get_max_frame_latency(ptr)
 @ cdecl wined3d_device_get_npatch_mode(ptr)
@@ -98,6 +99,7 @@
 @ cdecl wined3d_device_get_rendertarget_view(ptr long)
 @ cdecl wined3d_device_get_scissor_rects(ptr ptr ptr)
 @ cdecl wined3d_device_get_software_vertex_processing(ptr)
+@ cdecl wined3d_device_get_state(ptr)
 @ cdecl wined3d_device_get_stream_output(ptr long ptr)
 @ cdecl wined3d_device_get_stream_source(ptr long ptr ptr ptr)
 @ cdecl wined3d_device_get_swapchain(ptr long)
@@ -151,6 +153,7 @@
 @ cdecl wined3d_device_set_rendertarget_view(ptr long ptr long)
 @ cdecl wined3d_device_set_scissor_rects(ptr long ptr)
 @ cdecl wined3d_device_set_software_vertex_processing(ptr long)
+@ cdecl wined3d_device_set_state(ptr ptr)
 @ cdecl wined3d_device_set_stream_output(ptr long ptr long)
 @ cdecl wined3d_device_set_stream_source(ptr long ptr long long)
 @ cdecl wined3d_device_set_unordered_access_view(ptr long ptr long)
@@ -163,6 +166,12 @@
 @ cdecl wined3d_device_update_sub_resource(ptr ptr long ptr ptr long long long)
 @ cdecl wined3d_device_update_texture(ptr ptr ptr)
 @ cdecl wined3d_device_validate_device(ptr ptr)
+
+@ cdecl wined3d_device_context_set_blend_state(ptr ptr ptr long)
+@ cdecl wined3d_device_context_set_constant_buffer(ptr long long ptr)
+@ cdecl wined3d_device_context_set_depth_stencil_state(ptr ptr long)
+@ cdecl wined3d_device_context_set_rasterizer_state(ptr ptr)
+@ cdecl wined3d_device_context_set_shader(ptr long ptr)
 
 @ cdecl wined3d_output_find_closest_matching_mode(ptr ptr)
 @ cdecl wined3d_output_get_adapter(ptr)
@@ -238,6 +247,9 @@
 @ cdecl wined3d_shader_resource_view_generate_mipmaps(ptr)
 @ cdecl wined3d_shader_resource_view_get_parent(ptr)
 @ cdecl wined3d_shader_resource_view_incref(ptr)
+
+@ cdecl wined3d_state_create(ptr ptr)
+@ cdecl wined3d_state_destroy(ptr)
 
 @ cdecl wined3d_stateblock_apply(ptr ptr)
 @ cdecl wined3d_stateblock_capture(ptr ptr)

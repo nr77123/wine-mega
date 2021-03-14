@@ -1166,23 +1166,15 @@ static void output_delayed_import_thunks( const DLLSPEC *spec )
             switch(target_cpu)
             {
             case CPU_x86:
-                output( "\tmovl $%d, %%eax\n", (idx << 16) | j );
-                output( "\tjmp %s\n", asm_name("__wine_delay_load_asm") );
-                break;
             case CPU_x86_64:
-                output( "\tmovq $%d,%%rax\n", (idx << 16) | j );
+                output( "\tmovl $%d,%%eax\n", (idx << 16) | j );
                 output( "\tjmp %s\n", asm_name("__wine_delay_load_asm") );
                 break;
             case CPU_ARM:
-            {
-                unsigned int mask, count = 0, val = (idx << 16) | j;
-
-                for (mask = 0xff; mask; mask <<= 8)
-                    if (val & mask) output( "\t%s IP,#%u\n", count++ ? "add" : "mov", val & mask );
-                if (!count) output( "\tmov IP,#0\n" );
+                output( "\tmov ip, #%u\n", j );
+                if (idx) output( "\tmovt ip, #%u\n", idx );
                 output( "\tb %s\n", asm_name("__wine_delay_load_asm") );
                 break;
-            }
             case CPU_ARM64:
                 if (idx)
                 {
@@ -1370,12 +1362,15 @@ void output_stubs( DLLSPEC *spec )
             }
             else
             {
-                output( "\tldr r0,1f\n");
-                output( "\tldr r1,1f+4\n");
+                output( "\tmovw r0,:lower16:.L__wine_spec_file_name\n");
+                output( "\tmovt r0,:upper16:.L__wine_spec_file_name\n");
+                if (exp_name)
+                {
+                    output( "\tmovw r1,:lower16:.L%s_string\n", name );
+                    output( "\tmovt r1,:upper16:.L%s_string\n", name );
+                }
+                else output( "\tmov r1,#%u\n", odp->ordinal );
                 output( "\tbl %s\n", asm_name("__wine_spec_unimplemented_stub") );
-                output( "1:\t.long .L__wine_spec_file_name\n" );
-                if (exp_name) output( "\t.long .L%s_string\n", name );
-                else output( "\t.long %u\n", odp->ordinal );
             }
             break;
         case CPU_ARM64:
@@ -1430,6 +1425,7 @@ static void output_syscall_dispatcher( int count, const char *variant )
 {
     const unsigned int invalid_param = 0xc000000d; /* STATUS_INVALID_PARAMETER */
     const char *symbol = strmake( "__wine_syscall_dispatcher%s", variant );
+    unsigned int i;
 
     output( "\t.align %d\n", get_alignment(4) );
     output( "\t%s\n", func_declaration(symbol) );
@@ -1443,15 +1439,59 @@ static void output_syscall_dispatcher( int count, const char *variant )
         output_cfi( ".cfi_rel_offset %%ebp,0\n" );
         output( "\tmovl %%esp,%%ebp\n" );
         output_cfi( ".cfi_def_cfa_register %%ebp\n" );
-        output( "\tpushl %%ebx\n" );
-        output_cfi( ".cfi_rel_offset %%ebx,-4\n" );
-        output( "\tpushl %%esi\n" );
-        output_cfi( ".cfi_rel_offset %%esi,-8\n" );
-        output( "\tpushl %%edi\n" );
-        output_cfi( ".cfi_rel_offset %%edi,-12\n" );
-        output( "\tmovl %%esp,%%fs:0x1f8\n" );  /* x86_thread_data()->syscall_frame */
+        output( "\tleal -0x2c(%%esp),%%esp\n" );
+        output( "\tmovl %%ebx,-0x14(%%ebp)\n" );
+        output_cfi( ".cfi_rel_offset %%ebx,-0x14\n" );
+        output( "\tmovl %%edi,-0x08(%%ebp)\n" );
+        output_cfi( ".cfi_rel_offset %%edi,-0x08\n" );
+        output( "\tmovl %%esi,-0x04(%%ebp)\n" );
+        output_cfi( ".cfi_rel_offset %%esi,-0x04\n" );
+        output( "\tpushfl\n" );
+        output( "\tmovw %%gs,-0x1a(%%ebp)\n" );
+        output( "\tmovw %%fs,-0x1c(%%ebp)\n" );
+        output( "\tmovw %%es,-0x1e(%%ebp)\n" );
+        output( "\tmovw %%ds,-0x20(%%ebp)\n" );
+        output( "\tmovw %%ss,-0x22(%%ebp)\n" );
+        output( "\tmovw %%cs,-0x24(%%ebp)\n" );
+        output( "\tleal 8(%%ebp),%%ecx\n" );
+        output( "\tmovl %%ecx,-0x28(%%ebp)\n" ); /* frame->esp */
+        output( "\tmovl 4(%%ebp),%%ecx\n" );
+        output( "\tmovl %%ecx,-0x2c(%%ebp)\n" ); /* frame->eip */
+        output( "\tsubl $0x2c0,%%esp\n") ;
+        output( "\tandl $~63,%%esp\n" );
+        if (!*variant)
+        {
+            output( "\tfnsave (%%esp)\n" );
+            output( "\tfwait\n" );
+        }
+        else if(!strcmp( variant, "_fxsave" ))
+        {
+            output( "\tfxsave (%%esp)\n" );
+        }
+        else if(!strcmp( variant, "_xsave" ))
+        {
+            output( "\tmovl %%eax,%%ecx\n ");
+            output( "\tmovl $7,%%eax\n" );
+            output( "\txorl %%edx,%%edx\n" );
+            for (i = 0; i < 6; i++)
+                output( "\tmovl %%edx,0x%x(%%esp)\n", 0x200 + i * 4 );
+            output( "\txsave (%%esp)\n" );
+            output( "\tmovl %%ecx,%%eax\n ");
+        }
+        else /* _xsavec */
+        {
+            output( "\tmovl %%eax,%%ecx\n ");
+            output( "\tmovl $7,%%eax\n" );
+            output( "\txorl %%edx,%%edx\n" );
+            for (i = 0; i < 16; i++)
+                output( "\tmovl %%edx,0x%x(%%esp)\n", 0x200 + i * 4 );
+            output( "\txsavec (%%esp)\n" );
+            output( "\tmovl %%ecx,%%eax\n ");
+        }
+        output( "\tleal -0x30(%%ebp),%%ecx\n" );
+        output( "\tmovl %%ecx,%%fs:0x1f8\n" );  /* x86_thread_data()->syscall_frame */
         output( "\tcmpl $%u,%%eax\n", count );
-        output( "\tjae 3f\n" );
+        output( "\tjae 4f\n" );
         if (UsePIC)
         {
             output( "\tmovl %%eax,%%edx\n" );
@@ -1471,19 +1511,74 @@ static void output_syscall_dispatcher( int count, const char *variant )
             output( "\tcall *.Lsyscall_table-1b(%%eax,%%edx,4)\n" );
         else
             output( "\tcall *.Lsyscall_table(,%%eax,4)\n" );
-        output( "\tleal -12(%%ebp),%%esp\n" );
         output( "2:\tmovl $0,%%fs:0x1f8\n" );
-        output( "\tpopl %%edi\n" );
-        output_cfi( ".cfi_same_value %%edi\n" );
-        output( "\tpopl %%esi\n" );
-        output_cfi( ".cfi_same_value %%esi\n" );
-        output( "\tpopl %%ebx\n" );
-        output_cfi( ".cfi_same_value %%ebx\n" );
-        output( "\tpopl %%ebp\n" );
-        output_cfi( ".cfi_def_cfa %%esp,4\n" );
-        output_cfi( ".cfi_same_value %%ebp\n" );
-        output( "\tret\n" );
-        output( "3:\tmovl $0x%x,%%eax\n", invalid_param );
+        output( "\tleal -0x2f0(%%ebp),%%ebx\n") ;
+        output( "\tandl $~63,%%ebx\n" );
+        if (!*variant)
+        {
+            output( "\tfrstor (%%ebx)\n" );
+            output( "\tfwait\n" );
+        }
+        else if(!strcmp( variant, "_fxsave" ))
+        {
+            output( "\tfxrstor (%%ebx)\n" );
+        }
+        else
+        {
+            output( "\tmovl %%eax,%%ecx\n" );
+            output( "\tmovl $7,%%eax\n" );
+            output( "\txorl %%edx,%%edx\n" );
+            output( "\txrstor (%%ebx)\n" );
+            output( "\tmovl %%ecx,%%eax\n" );
+        }
+        output( "\tleal -0x30(%%ebp),%%ebx\n" );
+        output_cfi( ".cfi_def_cfa_register %%ebx" );
+        output_cfi( ".cfi_adjust_cfa_offset 0x30\n" );
+        output( "\tmovl %%eax,0x18(%%ebx)\n" );
+        output( "\tmovw 0x16(%%ebx),%%gs\n" );
+        output( "\tmovw 0x14(%%ebx),%%fs\n" );
+        output( "\tmovw 0x12(%%ebx),%%es\n" );
+        output( "\tmovl 0x28(%%ebx),%%edi\n" );
+        output_cfi( ".cfi_same_value %%edi" );
+        output( "\tmovl 0x2c(%%ebx),%%esi\n" );
+        output_cfi( ".cfi_same_value %%esi" );
+        output( "\tmovl (%%ebp),%%ebp\n" );
+        output_cfi( ".cfi_same_value %%ebp" );
+        output( "\tmovw %%ss,%%cx\n" );
+        output( "\tcmpw 0x0e(%%ebx),%%cx\n" );
+        output( "\tjne 3f\n" );
+        /* As soon as we have switched stacks the context structure could
+         * be invalid (when signal handlers are executed for example). Copy
+         * values on the target stack before changing ESP. */
+        output( "\tmovl 0x08(%%ebx),%%ecx\n" );
+        output( "\tleal -3*4(%%ecx),%%ecx\n" );
+        output( "\tmovl (%%ebx),%%edx\n" );
+        output( "\tmovl %%edx,2*4(%%ecx)\n" );
+        output( "\tmovl 0x0c(%%ebx),%%edx\n" );
+        output( "\tmovl %%edx,1*4(%%ecx)\n" );
+        output( "\tmovl 0x04(%%ebx),%%edx\n" );
+        output( "\tmovl %%edx,0*4(%%ecx)\n" );
+        output( "\tpushl 0x10(%%ebx)\n" );
+        output( "\tmovl 0x1c(%%ebx),%%ebx\n" );
+        output_cfi( ".cfi_same_value %%ebx" );
+        output( "\tpopl %%ds\n" );
+        output( "\tmovl %%ecx,%%esp\n" );
+        output( "\tiret\n" );
+        /* Restore the context when the stack segment changes. We can't use
+         * the same code as above because we do not know if the stack segment
+         * is 16 or 32 bit, and 'movl' will throw an exception when we try to
+         * access memory above the limit. */
+        output( "\t3:\tmovl 0x18(%%ebx),%%ecx\n" );
+        output( "\tmovw 0x0e(%%ebx),%%ss\n" );
+        output( "\tmovl 0x08(%%ebx),%%esp\n" );
+        output( "\tpushl 0x00(%%ebx)\n" );
+        output( "\tpushl 0x0c(%%ebx)\n" );
+        output( "\tpushl 0x04(%%ebx)\n" );
+        output( "\tpushl 0x10(%%ebx)\n" );
+        output( "\tmovl 0x1c(%%ebx),%%ebx\n" );
+        output( "\tpopl %%ds\n" );
+        output( "\tiret\n" );
+        output( "4:\tmovl $0x%x,%%eax\n", invalid_param );
         output( "\tjmp 2b\n" );
         break;
     case CPU_x86_64:
@@ -1535,7 +1630,17 @@ static void output_syscall_dispatcher( int count, const char *variant )
             output( "\tmovq %%rdx,0x200(%%r12)\n" );
             output( "\tmovq %%rdx,0x208(%%r12)\n" );
             output( "\tmovq %%rdx,0x210(%%r12)\n" );
-            output( "\txsave64 (%%r12)\n" );
+            if (!strcmp( variant, "_xsavec" ))
+            {
+                output( "\tmovq %%rdx,0x218(%%r12)\n" );
+                output( "\tmovq %%rdx,0x220(%%r12)\n" );
+                output( "\tmovq %%rdx,0x228(%%r12)\n" );
+                output( "\tmovq %%rdx,0x230(%%r12)\n" );
+                output( "\tmovq %%rdx,0x238(%%r12)\n" );
+                output( "\txsavec64 (%%r12)\n" );
+            }
+            else
+                output( "\txsave64 (%%r12)\n" );
             output( "\tmovq %%rsi,%%rdx\n" );
         }
         output( "\tmovq %%gs:0x30,%%rcx\n" );
@@ -1560,7 +1665,18 @@ static void output_syscall_dispatcher( int count, const char *variant )
         output( "\tcallq *(%%r10,%%r11,8)\n" );
         output( "2:\tmovq %%gs:0x30,%%rcx\n" );
         output( "\tmovq $0,0x328(%%rcx)\n" );
-        output( "\tfxrstor64 (%%r12)\n" );
+        if (!*variant)
+        {
+            output( "\tfxrstor64 (%%r12)\n" );
+        }
+        else
+        {
+            output( "\tmovq %%rax,%%r11\n" );
+            output( "\tmovl $7,%%eax\n" );
+            output( "\txorq %%rdx,%%rdx\n" );
+            output( "\txrstor64 (%%r12)\n" );
+            output( "\tmovq %%r11,%%rax\n" );
+        }
         output( "\tmovq -0x30(%%rbp),%%r15\n" );
         output( "\tmovq -0x38(%%rbp),%%r14\n" );
         output( "\tmovq -0x40(%%rbp),%%r13\n" );
@@ -1591,6 +1707,7 @@ static void output_syscall_dispatcher( int count, const char *variant )
         output( "\tmrc p15, 0, r7, c13, c0, 2\n" ); /* NtCurrentTeb() */
         output( "\tadd r7, #0x1d8\n" );  /* arm_thread_data()->syscall_frame */
         output( "\tmrs ip, CPSR\n" );
+        output( "\tbfi ip, lr, #5, #1\n" );  /* set thumb bit */
         output( "\tstr ip, [sp, #4]\n" );
         output( "\tstr sp, [r7]\n" );  /* syscall frame */
         output( "\tldr r5, 6f+4\n");
@@ -1728,8 +1845,14 @@ void output_syscalls( DLLSPEC *spec )
 
         switch( target_cpu )
         {
+        case CPU_x86:
+            output_syscall_dispatcher( count, "_fxsave" );
+            output_syscall_dispatcher( count, "_xsave" );
+            output_syscall_dispatcher( count, "_xsavec" );
+            break;
         case CPU_x86_64:
             output_syscall_dispatcher( count, "_xsave" );
+            output_syscall_dispatcher( count, "_xsavec" );
             break;
         default:
             break;
@@ -1801,15 +1924,21 @@ void output_syscalls( DLLSPEC *spec )
             break;
         case CPU_ARM:
             output( "\tpush {r4,lr}\n" );
-            output( "\tldr r4, 3f\n");
-            output( "\tldr ip, 2f\n");
-            if (UsePIC) output( "1:\tadd ip, pc\n" );
+            output( "\tmov r4, #%u\n", i );
+            if (UsePIC)
+            {
+                output( "\tldr ip, 2f\n");
+                output( "1:\tadd ip, pc\n" );
+            }
+            else
+            {
+                output( "\tmovw ip, :lower16:%s\n", asm_name("__wine_syscall_dispatcher") );
+                output( "\tmovt ip, :upper16:%s\n", asm_name("__wine_syscall_dispatcher") );
+            }
             output( "\tldr ip, [ip]\n");
             output( "\tblx ip\n");
             output( "\tpop {r4,pc}\n" );
             if (UsePIC) output( "2:\t.long %s-1b-%u\n", asm_name("__wine_syscall_dispatcher"), thumb_mode ? 4 : 8 );
-            else output( "2:\t.long %s\n", asm_name("__wine_syscall_dispatcher") );
-            output( "3:\t.long %u\n", i );
             break;
         case CPU_ARM64:
             output( "\tstp x29, x30, [sp,#-16]!\n" );

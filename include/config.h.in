@@ -204,9 +204,6 @@
 /* Define to 1 if you have the `futimesat' function. */
 #undef HAVE_FUTIMESAT
 
-/* Define to 1 if you have the <gcrypt.h> header file. */
-#undef HAVE_GCRYPT_H
-
 /* Define to 1 if you have the `getaddrinfo' function. */
 #undef HAVE_GETADDRINFO
 
@@ -705,12 +702,6 @@
 /* Define to 1 if you have the `remquof' function. */
 #undef HAVE_REMQUOF
 
-/* Define to 1 if you have the `renameat' function. */
-#undef HAVE_RENAMEAT
-
-/* Define to 1 if you have the `renameat2' function. */
-#undef HAVE_RENAMEAT2
-
 /* Define to 1 if the system has the type `request_sense'. */
 #undef HAVE_REQUEST_SENSE
 
@@ -1115,9 +1106,6 @@
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
 
-/* Define to 1 if you have the `utimensat' function. */
-#undef HAVE_UTIMENSAT
-
 /* Define to 1 if you have the <utime.h> header file. */
 #undef HAVE_UTIME_H
 
@@ -1279,9 +1267,6 @@
 
 /* Define to the soname of the libfreetype library. */
 #undef SONAME_LIBFREETYPE
-
-/* Define to the soname of the libgcrypt library. */
-#undef SONAME_LIBGCRYPT
 
 /* Define to the soname of the libGL library. */
 #undef SONAME_LIBGL

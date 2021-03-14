@@ -114,7 +114,6 @@ static const struct object_ops dir_ops =
     add_queue,                /* add_queue */
     remove_queue,             /* remove_queue */
     default_fd_signaled,      /* signaled */
-    default_fd_get_esync_fd,  /* get_esync_fd */
     no_satisfied,             /* satisfied */
     no_signal,                /* signal */
     dir_get_fd,               /* get_fd */
@@ -1070,8 +1069,7 @@ static int dir_add_to_existing_notify( struct dir *dir )
 
 #endif  /* HAVE_SYS_INOTIFY_H */
 
-struct object *create_dir_obj( struct fd *fd, unsigned int access, mode_t mode,
-                               const struct security_descriptor *sd )
+struct object *create_dir_obj( struct fd *fd, unsigned int access, mode_t mode )
 {
     struct dir *dir;
 
@@ -1090,11 +1088,6 @@ struct object *create_dir_obj( struct fd *fd, unsigned int access, mode_t mode,
     dir->uid  = ~(uid_t)0;
     dir->client_process = NULL;
     set_fd_user( fd, &dir_fd_ops, &dir->obj );
-
-    if (sd) dir_set_sd( &dir->obj, sd, OWNER_SECURITY_INFORMATION |
-                                       GROUP_SECURITY_INFORMATION |
-                                       DACL_SECURITY_INFORMATION |
-                                       SACL_SECURITY_INFORMATION );
 
     dir_add_to_existing_notify( dir );
 

@@ -36,7 +36,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <libgen.h>
 #include <limits.h>
 #ifdef HAVE_MNTENT_H
 #include <mntent.h>
@@ -140,7 +139,6 @@
 #include "wine/list.h"
 #include "wine/debug.h"
 #include "unix_private.h"
-#include "ntifs.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(file);
 WINE_DECLARE_DEBUG_CHANNEL(winediag);
@@ -154,10 +152,6 @@ WINE_DECLARE_DEBUG_CHANNEL(winediag);
 #undef VFAT_IOCTL_READDIR_BOTH
 #undef EXT2_IOC_GETFLAGS
 #undef EXT4_CASEFOLD_FL
-
-#ifndef RENAME_EXCHANGE
-#define RENAME_EXCHANGE		(1 << 1)
-#endif
 
 #ifdef linux
 
@@ -484,32 +478,6 @@ static int xattr_set( const char *path, const char *name, void *value, size_t si
     return -1;
 #endif
 }
-
-#ifndef HAVE_RENAMEAT
-int renameat( int olddirfd, const char *oldpath, int newdirfd, const char *newpath )
-{
-    errno = ENOSYS;
-    return -1;
-}
-#endif
-
-#ifndef HAVE_RENAMEAT2
-int renameat2( int olddirfd, const char *oldpath, int newdirfd, const char *newpath,
-               unsigned int flags )
-{
-    if (flags == 0)
-        return renameat( olddirfd, oldpath, newdirfd, newpath );
-#if defined(__NR_renameat2)
-    return syscall( __NR_renameat2, olddirfd, oldpath, newdirfd, newpath, flags );
-#elif defined(RENAME_SWAP)
-    return renameatx_np(olddirfd, oldpath, newdirfd, newpath,
-                        (flags & RENAME_EXCHANGE ? RENAME_SWAP : 0));
-#else
-    errno = ENOSYS;
-    return -1;
-#endif
-}
-#endif /* HAVE_RENAMEAT2 */
 
 /* get space from the current directory data buffer, allocating a new one if necessary */
 static void *get_dir_data_space( struct dir_data *data, unsigned int size )
@@ -1612,11 +1580,6 @@ static inline int get_file_xattr( char *hexattr, int attrlen )
     return 0;
 }
 
-NTSTATUS FILE_DecodeSymlink(const char *unix_src, char *unix_dest, int *unix_dest_len,
-                            DWORD *tag, ULONG *flags, BOOL *is_dir);
-NTSTATUS get_symlink_properties(const char *target, int len, char *unix_dest, int *unix_dest_len,
-                                DWORD *tag, ULONG *flags, BOOL *is_dir);
-
 /* fetch the attributes of a file */
 static inline ULONG get_file_attributes( const struct stat *st )
 {
@@ -1652,22 +1615,6 @@ static int fd_get_file_info( int fd, unsigned int options, struct stat *st, ULON
     /* consider mount points to be reparse points (IO_REPARSE_TAG_MOUNT_POINT) */
     if ((options & FILE_OPEN_REPARSE_POINT) && fd_is_mount_point( fd, st ))
         *attr |= FILE_ATTRIBUTE_REPARSE_POINT;
-    if (S_ISLNK( st->st_mode ))
-    {
-        char path[MAX_PATH];
-        ssize_t len;
-        BOOL is_dir;
-
-        if ((len = readlinkat( fd, "", path, sizeof(path))) == -1) goto done;
-        /* symbolic links (either junction points or NT symlinks) are "reparse points" */
-        *attr |= FILE_ATTRIBUTE_REPARSE_POINT;
-        /* symbolic links always report size 0 */
-        st->st_size = 0;
-        if (get_symlink_properties(path, len, NULL, NULL, NULL, NULL, &is_dir) == STATUS_SUCCESS)
-            st->st_mode = (st->st_mode & ~S_IFMT) | (is_dir ? S_IFDIR : S_IFREG);
-    }
-
-done:
     return ret;
 }
 
@@ -1717,17 +1664,10 @@ static int get_file_info( const char *path, struct stat *st, ULONG *attr )
     if (ret == -1) return ret;
     if (S_ISLNK( st->st_mode ))
     {
-        BOOL is_dir;
-
-        /* return information about the destination (unless this is a dangling symlink) */
-        stat( path, st );
-        /* symbolic links always report size 0 */
-        st->st_size = 0;
-        /* symbolic links (either junction points or NT symlinks) are "reparse points" */
-        *attr |= FILE_ATTRIBUTE_REPARSE_POINT;
-        /* whether a reparse point is a file or a directory is stored inside the link target */
-        if (FILE_DecodeSymlink( path, NULL, NULL, NULL, NULL, &is_dir ) == STATUS_SUCCESS)
-            st->st_mode = (st->st_mode & ~S_IFMT) | (is_dir ? S_IFDIR : S_IFREG);
+        ret = stat( path, st );
+        if (ret == -1) return ret;
+        /* is a symbolic link and a directory, consider these "reparse points" */
+        if (S_ISDIR( st->st_mode )) *attr |= FILE_ATTRIBUTE_REPARSE_POINT;
     }
     else if (S_ISDIR( st->st_mode ) && (parent_path = malloc( strlen(path) + 4 )))
     {
@@ -1757,14 +1697,6 @@ static int get_file_info( const char *path, struct stat *st, ULONG *attr )
 }
 
 
-#if defined(__ANDROID__) && !defined(HAVE_UTIMENSAT)
-static int utimensat( int fd, const char *name, const struct timespec spec[2], int flags )
-{
-    return syscall( __NR_utimensat, fd, name, spec, flags );
-}
-#define HAVE_UTIMENSAT
-#endif  /* __ANDROID__ */
-
 #if defined(__ANDROID__) && !defined(HAVE_FUTIMENS)
 static int futimens( int fd, const struct timespec spec[2] )
 {
@@ -1780,7 +1712,7 @@ static int futimens( int fd, const struct timespec spec[2] )
 static BOOL set_file_times_precise( int fd, const LARGE_INTEGER *mtime,
                                     const LARGE_INTEGER *atime, NTSTATUS *status )
 {
-#if defined(HAVE_FUTIMENS) || defined(HAVE_UTIMENSAT)
+#ifdef HAVE_FUTIMENS
     struct timespec tv[2];
 
     tv[0].tv_sec = tv[1].tv_sec = 0;
@@ -1796,16 +1728,10 @@ static BOOL set_file_times_precise( int fd, const LARGE_INTEGER *mtime,
         tv[1].tv_nsec = (mtime->QuadPart % 10000000) * 100;
     }
 #ifdef __APPLE__
-    if (!&utimensat || !&futimens) return FALSE;
+    if (!&futimens) return FALSE;
 #endif
-#if defined(HAVE_UTIMENSAT)
-    /* futimens does not work on O_PATH|O_NOFOLLOW (O_SYMLINK) file descriptors, so if fd is for a
-     * symlink then use utimensat with an empty path (.) and do not follow the link. */
-    if (utimensat(fd, ".", tv, AT_SYMLINK_NOFOLLOW) == 0) *status = STATUS_SUCCESS;
-    else
-#endif
-    if (futimens(fd, tv) == 0) *status = STATUS_SUCCESS;
-    else *status = errno_to_status( errno );
+    if (futimens( fd, tv ) == -1) *status = errno_to_status( errno );
+    else *status = STATUS_SUCCESS;
     return TRUE;
 #else
     return FALSE;
@@ -2013,7 +1939,7 @@ static NTSTATUS fill_file_info( const struct stat *st, ULONG attr, void *ptr,
 }
 
 
-static NTSTATUS server_get_unix_name( HANDLE handle, char **unix_name, BOOL nofollow )
+static NTSTATUS server_get_unix_name( HANDLE handle, char **unix_name )
 {
     data_size_t size = 1024;
     NTSTATUS ret;
@@ -2026,7 +1952,6 @@ static NTSTATUS server_get_unix_name( HANDLE handle, char **unix_name, BOOL nofo
         SERVER_START_REQ( get_handle_unix_name )
         {
             req->handle = wine_server_obj_handle( handle );
-            req->nofollow = nofollow;
             wine_server_set_reply( req, name, size );
             ret = wine_server_call( req );
             size = reply->name_len;
@@ -2201,23 +2126,22 @@ static NTSTATUS get_mountmgr_fs_info( HANDLE handle, int fd, struct mountmgr_uni
     NTSTATUS status;
     int letter;
 
-    if ((status = server_get_unix_name( handle, &unix_name, FALSE ))) return status;
+    if ((status = server_get_unix_name( handle, &unix_name ))) return status;
     letter = find_dos_device( unix_name );
     free( unix_name );
 
+    memset( drive, 0, sizeof(*drive) );
     if (letter == -1)
     {
         struct stat st;
 
         fstat( fd, &st );
         drive->unix_dev = st.st_rdev ? st.st_rdev : st.st_dev;
-        drive->letter = 0;
     }
     else
         drive->letter = 'a' + letter;
 
-    string.Buffer = (WCHAR *)MOUNTMGR_DEVICE_NAME;
-    string.Length = sizeof(MOUNTMGR_DEVICE_NAME) - sizeof(WCHAR);
+    init_unicode_string( &string, MOUNTMGR_DEVICE_NAME );
     InitializeObjectAttributes( &attr, &string, 0, NULL, NULL );
     status = NtOpenFile( &mountmgr, GENERIC_READ | SYNCHRONIZE, &attr, &io,
                          FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_SYNCHRONOUS_IO_NONALERT );
@@ -2963,11 +2887,15 @@ static int get_redirect_path( char *unix_name, int pos, const WCHAR *name, int l
 
 #endif
 
+#define IS_OPTION_TRUE(ch) ((ch) == 'y' || (ch) == 'Y' || (ch) == 't' || (ch) == 'T' || (ch) == '1')
+
 /***********************************************************************
  *           init_files
  */
 void init_files(void)
 {
+    HANDLE key;
+
 #ifndef _WIN64
     if (is_wow64) init_redirects();
 #endif
@@ -2981,6 +2909,22 @@ void init_files(void)
     /* retrieve initial umask */
     start_umask = umask( 0777 );
     umask( start_umask );
+
+    if (!open_hkcu_key( "Software\\Wine", &key ))
+    {
+        static WCHAR showdotfilesW[] = {'S','h','o','w','D','o','t','F','i','l','e','s',0};
+        char tmp[80];
+        DWORD dummy;
+        UNICODE_STRING nameW;
+
+        init_unicode_string( &nameW, showdotfilesW );
+        if (!NtQueryValueKey( key, &nameW, KeyValuePartialInformation, tmp, sizeof(tmp), &dummy ))
+        {
+            WCHAR *str = (WCHAR *)((KEY_VALUE_PARTIAL_INFORMATION *)tmp)->Data;
+            show_dot_files = IS_OPTION_TRUE( str[0] );
+        }
+        NtClose( key );
+    }
 }
 
 
@@ -3420,19 +3364,6 @@ static NTSTATUS lookup_unix_name( const WCHAR *name, int name_len, char **buffer
             else if (status == STATUS_SUCCESS && disposition == FILE_CREATE)
             {
                 status = STATUS_OBJECT_NAME_COLLISION;
-            }
-        }
-        else if (disposition == FILE_WINE_PATH && status == STATUS_OBJECT_PATH_NOT_FOUND)
-        {
-            ret = ntdll_wcstoumbs( name, end - name, unix_name + pos + 1, MAX_DIR_ENTRY_LEN + 1, TRUE );
-            if (ret > 0 && ret <= MAX_DIR_ENTRY_LEN)
-            {
-                unix_name[pos] = '/';
-                unix_name[pos + 1 + ret] = 0;
-                status = STATUS_NO_SUCH_FILE;
-                pos += strlen( unix_name + pos );
-                name = next;
-                continue;
             }
         }
 
@@ -3895,15 +3826,6 @@ static NTSTATUS unmount_device( HANDLE handle )
         if (needs_close) close( unix_fd );
     }
     return status;
-}
-
-
-/***********************************************************************
- *           set_show_dot_files
- */
-void CDECL set_show_dot_files( BOOL enable )
-{
-    show_dot_files = enable;
 }
 
 NTSTATUS set_file_info( const char *path, ULONG attr )
@@ -4379,7 +4301,7 @@ NTSTATUS WINAPI NtQueryInformationFile( HANDLE handle, IO_STATUS_BLOCK *io,
             if (fd_get_file_info( fd, options, &st, &attr ) == -1) io->u.Status = errno_to_status( errno );
             else if (!S_ISREG(st.st_mode) && !S_ISDIR(st.st_mode))
                 io->u.Status = STATUS_INVALID_INFO_CLASS;
-            else if (!(io->u.Status = server_get_unix_name( handle, &unix_name, FALSE )))
+            else if (!(io->u.Status = server_get_unix_name( handle, &unix_name )))
             {
                 LONG name_len = len - FIELD_OFFSET(FILE_ALL_INFORMATION, NameInformation.FileName);
 
@@ -4440,7 +4362,7 @@ NTSTATUS WINAPI NtQueryInformationFile( HANDLE handle, IO_STATUS_BLOCK *io,
             FILE_NAME_INFORMATION *info = ptr;
             char *unix_name;
 
-            if (!(io->u.Status = server_get_unix_name( handle, &unix_name, FALSE )))
+            if (!(io->u.Status = server_get_unix_name( handle, &unix_name )))
             {
                 LONG name_len = len - FIELD_OFFSET(FILE_NAME_INFORMATION, FileName);
                 io->u.Status = fill_name_info( unix_name, info, &name_len );
@@ -4454,7 +4376,7 @@ NTSTATUS WINAPI NtQueryInformationFile( HANDLE handle, IO_STATUS_BLOCK *io,
             FILE_NETWORK_OPEN_INFORMATION *info = ptr;
             char *unix_name;
 
-            if (!(io->u.Status = server_get_unix_name( handle, &unix_name, FALSE )))
+            if (!(io->u.Status = server_get_unix_name( handle, &unix_name )))
             {
                 ULONG attributes;
                 struct stat st;
@@ -4491,7 +4413,7 @@ NTSTATUS WINAPI NtQueryInformationFile( HANDLE handle, IO_STATUS_BLOCK *io,
             FILE_ID_INFORMATION *info = ptr;
 
             info->VolumeSerialNumber = 0;
-            if (!(io->u.Status = get_mountmgr_fs_info( handle, fd, &drive, sizeof(drive) )))
+            if (!get_mountmgr_fs_info( handle, fd, &drive, sizeof(drive) ))
                 info->VolumeSerialNumber = drive.serial;
             memset( &info->FileId, 0, sizeof(info->FileId) );
             *(ULONGLONG *)&info->FileId = st.st_ino;
@@ -4503,16 +4425,7 @@ NTSTATUS WINAPI NtQueryInformationFile( HANDLE handle, IO_STATUS_BLOCK *io,
         {
             FILE_ATTRIBUTE_TAG_INFORMATION *info = ptr;
             info->FileAttributes = attr;
-            info->ReparseTag = 0;
-            if (attr & FILE_ATTRIBUTE_REPARSE_POINT)
-            {
-                char path[MAX_PATH];
-                ssize_t len;
-                BOOL is_dir;
-
-                if ((len = readlinkat( fd, "", path, sizeof(path))) != -1)
-                    get_symlink_properties(path, len, NULL, NULL, &info->ReparseTag, NULL, &is_dir);
-            }
+            info->ReparseTag = 0; /* FIXME */
             if ((options & FILE_OPEN_REPARSE_POINT) && fd_is_mount_point( fd, &st ))
                 info->ReparseTag = IO_REPARSE_TAG_MOUNT_POINT;
         }
@@ -5432,11 +5345,6 @@ NTSTATUS WINAPI NtReadFile( HANDLE handle, HANDLE event, PIO_APC_ROUTINE apc, vo
             goto done;
         }
     }
-    else if (type == FD_TYPE_SYMLINK)
-    {
-        status = STATUS_SUCCESS;
-        goto done;
-    }
 
     if (type == FD_TYPE_SERIAL && async_read && length)
     {
@@ -6023,513 +5931,6 @@ static void ignore_server_ioctl_struct_holes( ULONG code, const void *in_buffer,
 }
 
 
-/*
- * Retrieve the unix name corresponding to a file handle, remove that directory, and then symlink
- * the requested directory to the location of the old directory.
- */
-NTSTATUS FILE_CreateSymlink(HANDLE handle, REPARSE_DATA_BUFFER *buffer)
-{
-    BOOL src_allocated = FALSE, path_allocated = FALSE, dest_allocated = FALSE;
-    BOOL nt_dest_allocated = FALSE, tempdir_created = FALSE;
-    char *unix_src, *unix_dest, *unix_path = NULL;
-    char tmpdir[PATH_MAX], tmplink[PATH_MAX], *d;
-    SIZE_T unix_dest_len = PATH_MAX;
-    char magic_dest[PATH_MAX];
-    int dest_fd, needs_close;
-    int relative_offset = 0;
-    UNICODE_STRING nt_dest;
-    int dest_len, offset;
-    BOOL is_dir = TRUE;
-    NTSTATUS status;
-    struct stat st;
-    WCHAR *dest;
-    ULONG flags;
-    int i;
-
-    switch(buffer->ReparseTag)
-    {
-    case IO_REPARSE_TAG_MOUNT_POINT:
-        dest_len = buffer->MountPointReparseBuffer.SubstituteNameLength;
-        offset = buffer->MountPointReparseBuffer.SubstituteNameOffset;
-        dest = &buffer->MountPointReparseBuffer.PathBuffer[offset];
-        flags = 0;
-        break;
-    case IO_REPARSE_TAG_SYMLINK:
-        dest_len = buffer->SymbolicLinkReparseBuffer.SubstituteNameLength;
-        offset = buffer->SymbolicLinkReparseBuffer.SubstituteNameOffset;
-        dest = &buffer->SymbolicLinkReparseBuffer.PathBuffer[offset];
-        flags = buffer->SymbolicLinkReparseBuffer.Flags;
-        break;
-    default:
-        return STATUS_NOT_IMPLEMENTED;
-    }
-
-    if ((status = server_get_unix_fd( handle, FILE_SPECIAL_ACCESS, &dest_fd, &needs_close, NULL, NULL )))
-        return status;
-
-    if ((status = server_get_unix_name( handle, &unix_src, FALSE )))
-        goto cleanup;
-    src_allocated = TRUE;
-    if (flags == SYMLINK_FLAG_RELATIVE)
-    {
-        SIZE_T nt_path_len = PATH_MAX, unix_path_len = PATH_MAX;
-        WCHAR *nt_path;
-
-        /* resolve the NT path of the source */
-        unix_path = malloc( strlen(unix_src) + 2 );
-        path_allocated = TRUE;
-        strcpy( unix_path, unix_src );
-        d = dirname( unix_path );
-        if (d != unix_path) strcpy( unix_path, d );
-        strcat( unix_path, "/");
-        for (;;)
-        {
-            nt_path = malloc( nt_path_len * sizeof(WCHAR) );
-            if (!nt_path)
-            {
-                status = STATUS_NO_MEMORY;
-                goto cleanup;
-            }
-            status = wine_unix_to_nt_file_name( unix_path, nt_path, &nt_path_len );
-            if (status != STATUS_BUFFER_TOO_SMALL) break;
-            free( nt_path );
-        }
-        if (status != STATUS_SUCCESS)
-            goto cleanup;
-        free(unix_path);
-        /* re-resolve the unix path for the source */
-        for (;;)
-        {
-            UNICODE_STRING nt_path_tmp;
-            unix_path = malloc( unix_path_len );
-            if (!unix_path)
-            {
-                status = STATUS_NO_MEMORY;
-                goto cleanup;
-            }
-            nt_path_tmp.Buffer = nt_path;
-            nt_path_tmp.Length = wcslen(nt_path) * sizeof(WCHAR);
-            status = wine_nt_to_unix_file_name( &nt_path_tmp, unix_path, &unix_path_len, FALSE );
-            if (status != STATUS_BUFFER_TOO_SMALL) break;
-            free( unix_path );
-        }
-        /* append the destination */
-        nt_dest.MaximumLength = dest_len + (wcslen( nt_path ) + 1) * sizeof(WCHAR);
-        nt_dest.Buffer = malloc( nt_dest.MaximumLength );
-        wcscpy( nt_dest.Buffer, nt_path );
-        free( nt_path );
-        memcpy( &nt_dest.Buffer[wcslen(nt_dest.Buffer)], dest, dest_len + sizeof(WCHAR));
-        nt_dest.Length = wcslen( nt_dest.Buffer ) * sizeof(WCHAR);
-    }
-    else
-    {
-        nt_dest.MaximumLength = (wcslen( dest ) + 1) * sizeof(WCHAR);
-        nt_dest.Buffer = malloc( nt_dest.MaximumLength );
-        wcscpy( nt_dest.Buffer, dest );
-        nt_dest.Length = dest_len;
-    }
-    nt_dest_allocated = TRUE;
-    /* resolve the NT path of the destination */
-    for (;;)
-    {
-        unix_dest = malloc( unix_dest_len );
-        if (!unix_dest)
-        {
-            status = STATUS_NO_MEMORY;
-            goto cleanup;
-        }
-        status = wine_nt_to_unix_file_name( &nt_dest, unix_dest, &unix_dest_len, FILE_WINE_PATH );
-        if (status != STATUS_BUFFER_TOO_SMALL) break;
-        free( unix_dest );
-    }
-    if (status != STATUS_SUCCESS && status != STATUS_NO_SUCH_FILE)
-        goto cleanup;
-    dest_allocated = TRUE;
-    /* check that the source and destination paths are the same up to the relative path */
-    if (flags == SYMLINK_FLAG_RELATIVE)
-    {
-        relative_offset = strlen(unix_path);
-        if (strncmp( unix_path, unix_dest, relative_offset ) != 0)
-        {
-            status = STATUS_IO_REPARSE_DATA_INVALID;
-            goto cleanup;
-        }
-    }
-
-    TRACE( "Linking %s to %s\n", unix_src, &unix_dest[relative_offset] );
-
-    /* Encode the reparse tag into the symlink */
-    strcpy( magic_dest, "" );
-    if (flags == SYMLINK_FLAG_RELATIVE)
-        strcat( magic_dest, "." );
-    strcat( magic_dest, "/" );
-    for (i = 0; i < sizeof(ULONG)*8; i++)
-    {
-        if ((buffer->ReparseTag >> i) & 1)
-            strcat( magic_dest, "." );
-        strcat( magic_dest, "/" );
-    }
-    /* Encode the type (file or directory) if NT symlink */
-    if (buffer->ReparseTag == IO_REPARSE_TAG_SYMLINK)
-    {
-        if (fstat( dest_fd, &st ) == -1)
-        {
-            status = errno_to_status( errno );
-            goto cleanup;
-        }
-        is_dir = S_ISDIR(st.st_mode);
-        if (is_dir)
-            strcat( magic_dest, "." );
-        strcat( magic_dest, "/" );
-    }
-    strcat( magic_dest, &unix_dest[relative_offset] );
-
-    /* Produce the link in a temporary location in the same folder */
-    strcpy( tmpdir, unix_src );
-    d = dirname( tmpdir);
-    if (d != tmpdir) strcpy( tmpdir, d );
-    strcat( tmpdir, "/.winelink.XXXXXX" );
-    if (mkdtemp( tmpdir ) == NULL)
-    {
-        status = errno_to_status( errno );
-        goto cleanup;
-    }
-    tempdir_created = TRUE;
-    strcpy( tmplink, tmpdir );
-    strcat( tmplink, "/tmplink" );
-    if (symlink( magic_dest, tmplink ))
-    {
-        status = errno_to_status( errno );
-        goto cleanup;
-    }
-    /* Atomically move the link into position */
-    if (!renameat2( -1, tmplink, -1, unix_src, RENAME_EXCHANGE ))
-    {
-        /* success: link and folder/file have switched locations */
-        if (is_dir)
-            rmdir( tmplink ); /* remove the folder (at link location) */
-        else
-            unlink( tmplink ); /* remove the file (at link location) */
-    }
-    else if (errno == ENOSYS)
-    {
-        FIXME( "Atomic exchange of directory with symbolic link unsupported on this system, "
-               "using unsafe exchange instead.\n" );
-        if (rmdir( unix_src ))
-        {
-            status = errno_to_status( errno );
-            goto cleanup;
-        }
-        if (rename( tmplink, unix_src ))
-        {
-            status = errno_to_status( errno );
-            goto cleanup; /* not moved, orignal file/folder at destination is orphaned */
-        }
-    }
-    else
-    {
-        status = errno_to_status( errno );
-        goto cleanup;
-    }
-    status = STATUS_SUCCESS;
-
-cleanup:
-    if (tempdir_created) rmdir( tmpdir );
-    if (path_allocated) free( unix_path );
-    if (dest_allocated) free( unix_dest );
-    if (nt_dest_allocated) free( nt_dest.Buffer );
-    if (src_allocated) free( unix_src );
-    if (needs_close) close( dest_fd );
-    return status;
-}
-
-
-NTSTATUS get_symlink_properties(const char *target, int len, char *unix_dest, int *unix_dest_len,
-                                DWORD *tag, ULONG *flags, BOOL *is_dir)
-{
-    const char *p = target;
-    DWORD reparse_tag;
-    BOOL dir_flag;
-    int i;
-
-    /* Decode the reparse tag from the symlink */
-    if (*p == '.')
-    {
-        if (flags) *flags = SYMLINK_FLAG_RELATIVE;
-        p++;
-    }
-    if (*p++ != '/')
-        return STATUS_NOT_IMPLEMENTED;
-    reparse_tag = 0;
-    for (i = 0; i < sizeof(ULONG)*8; i++)
-    {
-        char c = *p++;
-        int val;
-
-        if (c == '/')
-            val = 0;
-        else if (c == '.' && *p++ == '/')
-            val = 1;
-        else
-            return STATUS_NOT_IMPLEMENTED;
-        reparse_tag |= (val << i);
-    }
-    /* skip past the directory/file flag */
-    if (reparse_tag == IO_REPARSE_TAG_SYMLINK)
-    {
-        char c = *p++;
-
-        if (c == '/')
-            dir_flag = FALSE;
-        else if (c == '.' && *p++ == '/')
-            dir_flag = TRUE;
-        else
-            return STATUS_NOT_IMPLEMENTED;
-    }
-    else
-        dir_flag = TRUE;
-    len -= (p - target);
-    if (tag) *tag = reparse_tag;
-    if (is_dir) *is_dir = dir_flag;
-    if (unix_dest) memmove(unix_dest, p, len + 1);
-    if (unix_dest_len) *unix_dest_len = len;
-    return STATUS_SUCCESS;
-}
-
-
-NTSTATUS FILE_DecodeSymlink(const char *unix_src, char *unix_dest, int *unix_dest_len,
-                            DWORD *tag, ULONG *flags, BOOL *is_dir)
-{
-    int len = MAX_PATH;
-    NTSTATUS status;
-    ssize_t ret;
-    char *tmp;
-
-    if (unix_dest_len) len = *unix_dest_len;
-    if (!unix_dest)
-        tmp = malloc( len );
-    else
-        tmp = unix_dest;
-    if ((ret = readlink( unix_src, tmp, len )) < 0)
-    {
-        status = errno_to_status( errno );
-        goto cleanup;
-    }
-    len = ret;
-    status = get_symlink_properties(tmp, len, unix_dest, unix_dest_len, tag, flags, is_dir);
-
-cleanup:
-    if (!unix_dest) free( tmp );
-    return status;
-}
-
-
-/*
- * Retrieve the unix name corresponding to a file handle and use that to find the destination of the
- * symlink corresponding to that file handle.
- */
-NTSTATUS FILE_GetSymlink(HANDLE handle, REPARSE_DATA_BUFFER *buffer, ULONG out_size)
-{
-    char *unix_src, unix_dest[PATH_MAX];
-    VOID *subst_name, *print_name;
-    SIZE_T nt_dest_len = PATH_MAX;
-    int unix_dest_len = PATH_MAX;
-    BOOL dest_allocated = FALSE;
-    int dest_fd, needs_close;
-    DWORD max_length;
-    NTSTATUS status;
-    ULONG flags = 0;
-    WCHAR *nt_dest;
-    INT prefix_len;
-
-    if ((status = server_get_unix_fd( handle, FILE_ANY_ACCESS, &dest_fd, &needs_close, NULL, NULL )))
-        return status;
-
-    if ((status = server_get_unix_name( handle, &unix_src, TRUE )))
-        goto cleanup;
-
-    if ((status = FILE_DecodeSymlink( unix_src, unix_dest, &unix_dest_len, &buffer->ReparseTag, &flags, NULL )))
-        goto cleanup;
-    unix_dest[unix_dest_len] = 0;
-
-    /* convert the relative path into an absolute path */
-    if (flags == SYMLINK_FLAG_RELATIVE)
-    {
-        int i;
-
-        nt_dest_len = unix_dest_len;
-        nt_dest = malloc( nt_dest_len * sizeof(WCHAR) );
-        if (!nt_dest)
-        {
-            status = STATUS_NO_MEMORY;
-            goto cleanup;
-        }
-        /* wine_unix_to_nt_file_name does not work on relative paths, so convert manually */
-        for (i = 0; i < unix_dest_len; i++)
-        {
-            if (unix_dest[i] == '/') unix_dest[i] = '\\';
-        }
-        ascii_to_unicode( nt_dest, unix_dest, unix_dest_len );
-    }
-    else
-    {
-        /* resolve the NT path */
-        for (;;)
-        {
-            nt_dest = malloc( nt_dest_len * sizeof(WCHAR) );
-            if (!nt_dest)
-            {
-                status = STATUS_NO_MEMORY;
-                goto cleanup;
-            }
-            status = wine_unix_to_nt_file_name( unix_dest, nt_dest, &nt_dest_len );
-            if (status != STATUS_BUFFER_TOO_SMALL) break;
-            free( nt_dest );
-        }
-    }
-    dest_allocated = TRUE;
-    if (status != STATUS_SUCCESS)
-        goto cleanup;
-    nt_dest_len *= sizeof(WCHAR);
-
-    prefix_len = (flags == SYMLINK_FLAG_RELATIVE) ? 0 : strlen("\\??\\");
-    switch(buffer->ReparseTag)
-    {
-    case IO_REPARSE_TAG_MOUNT_POINT:
-        max_length = out_size-FIELD_OFFSET(typeof(*buffer), MountPointReparseBuffer.PathBuffer[1]);
-        buffer->MountPointReparseBuffer.SubstituteNameOffset = 0;
-        buffer->MountPointReparseBuffer.SubstituteNameLength = nt_dest_len;
-        subst_name = &buffer->MountPointReparseBuffer.PathBuffer[buffer->MountPointReparseBuffer.SubstituteNameOffset/sizeof(WCHAR)];
-        buffer->MountPointReparseBuffer.PrintNameOffset = nt_dest_len + sizeof(WCHAR);
-        buffer->MountPointReparseBuffer.PrintNameLength = nt_dest_len - prefix_len*sizeof(WCHAR);
-        print_name = &buffer->MountPointReparseBuffer.PathBuffer[buffer->MountPointReparseBuffer.PrintNameOffset/sizeof(WCHAR)];
-        break;
-    case IO_REPARSE_TAG_SYMLINK:
-        max_length = out_size-FIELD_OFFSET(typeof(*buffer), SymbolicLinkReparseBuffer.PathBuffer[1]);
-        buffer->SymbolicLinkReparseBuffer.SubstituteNameOffset = 0;
-        buffer->SymbolicLinkReparseBuffer.SubstituteNameLength = nt_dest_len;
-        subst_name = &buffer->SymbolicLinkReparseBuffer.PathBuffer[buffer->SymbolicLinkReparseBuffer.SubstituteNameOffset/sizeof(WCHAR)];
-        buffer->SymbolicLinkReparseBuffer.PrintNameOffset = nt_dest_len + sizeof(WCHAR);
-        buffer->SymbolicLinkReparseBuffer.PrintNameLength = nt_dest_len - prefix_len*sizeof(WCHAR);
-        print_name = &buffer->SymbolicLinkReparseBuffer.PathBuffer[buffer->SymbolicLinkReparseBuffer.PrintNameOffset/sizeof(WCHAR)];
-        buffer->SymbolicLinkReparseBuffer.Flags = flags;
-        break;
-    default:
-        /* unrecognized (regular) files should probably be treated as symlinks */
-        WARN("unrecognized symbolic link\n");
-        status = STATUS_NOT_IMPLEMENTED;
-        goto cleanup;
-    }
-    if (nt_dest_len > max_length)
-    {
-        status = STATUS_BUFFER_TOO_SMALL;
-        goto cleanup;
-    }
-
-    memcpy( subst_name, nt_dest, nt_dest_len );
-    memcpy( print_name, &nt_dest[prefix_len], nt_dest_len - prefix_len*sizeof(WCHAR) );
-    status = STATUS_SUCCESS;
-
-cleanup:
-    if (dest_allocated) free( nt_dest );
-    if (needs_close) close( dest_fd );
-    return status;
-}
-
-
-/*
- * Retrieve the unix name corresponding to a file handle, remove that symlink, and then recreate
- * a directory at the location of the old filename.
- */
-NTSTATUS FILE_RemoveSymlink(HANDLE handle, REPARSE_GUID_DATA_BUFFER *buffer)
-{
-    char tmpdir[PATH_MAX], tmpfile[PATH_MAX], *d;
-    BOOL tempdir_created = FALSE;
-    int dest_fd, needs_close;
-    BOOL is_dir = TRUE;
-    NTSTATUS status;
-    char *unix_name;
-    struct stat st;
-
-    if ((status = server_get_unix_fd( handle, FILE_SPECIAL_ACCESS, &dest_fd, &needs_close, NULL, NULL )))
-        return status;
-
-    if ((status = server_get_unix_name( handle, &unix_name, TRUE )))
-        goto cleanup;
-
-    TRACE( "Deleting symlink %s\n", unix_name );
-
-    /* Produce the file/directory in a temporary location in the same folder */
-    if (fstat( dest_fd, &st ) == -1)
-    {
-        status = errno_to_status( errno );
-        goto cleanup;
-    }
-    is_dir = S_ISDIR(st.st_mode);
-    strcpy( tmpdir, unix_name );
-    d = dirname( tmpdir);
-    if (d != tmpdir) strcpy( tmpdir, d );
-    strcat( tmpdir, "/.winelink.XXXXXX" );
-    if (mkdtemp( tmpdir ) == NULL)
-    {
-        status = errno_to_status( errno );
-        goto cleanup;
-    }
-    tempdir_created = TRUE;
-    strcpy( tmpfile, tmpdir );
-    strcat( tmpfile, "/tmpfile" );
-    if (is_dir && mkdir( tmpfile, st.st_mode ))
-    {
-        status = errno_to_status( errno );
-        goto cleanup;
-    }
-    else if (!is_dir)
-    {
-        int fd = open( tmpfile, O_CREAT|O_WRONLY|O_TRUNC, st.st_mode );
-        if (fd < 0)
-            {
-            status = errno_to_status( errno );
-            goto cleanup;
-        }
-        close( fd );
-    }
-    /* attemp to retain the ownership (if possible) */
-    lchown( tmpfile, st.st_uid, st.st_gid );
-    /* Atomically move the directory into position */
-    if (!renameat2( -1, tmpfile, -1, unix_name, RENAME_EXCHANGE ))
-    {
-        /* success: link and folder have switched locations */
-        unlink( tmpfile ); /* remove the link (at folder location) */
-    }
-    else if (errno == ENOSYS)
-    {
-        FIXME( "Atomic exchange of directory with symbolic link unsupported on this system, "
-               "using unsafe exchange instead.\n" );
-        if (unlink( unix_name ))
-        {
-            status = errno_to_status( errno );
-            goto cleanup;
-        }
-        if (rename( tmpfile, unix_name ))
-        {
-            status = errno_to_status( errno );
-            goto cleanup; /* not moved, orignal file/folder at destination is orphaned */
-        }
-    }
-    else
-    {
-        status = errno_to_status( errno );
-        goto cleanup;
-    }
-    status = STATUS_SUCCESS;
-
-cleanup:
-    if (tempdir_created) rmdir( tmpdir );
-    if (needs_close) close( dest_fd );
-    return status;
-}
-
-
 /******************************************************************************
  *              NtFsControlFile   (NTDLL.@)
  */
@@ -6609,47 +6010,6 @@ NTSTATUS WINAPI NtFsControlFile( HANDLE handle, HANDLE event, PIO_APC_ROUTINE ap
             io->Information = sizeof(*info);
         }
         else status = STATUS_BUFFER_TOO_SMALL;
-        break;
-    }
-
-    case FSCTL_DELETE_REPARSE_POINT:
-    {
-        REPARSE_GUID_DATA_BUFFER *buffer = (REPARSE_GUID_DATA_BUFFER *)in_buffer;
-
-        switch(buffer->ReparseTag)
-        {
-        case IO_REPARSE_TAG_MOUNT_POINT:
-        case IO_REPARSE_TAG_SYMLINK:
-            status = FILE_RemoveSymlink( handle, buffer );
-            break;
-        default:
-            FIXME("stub: FSCTL_DELETE_REPARSE_POINT(%x)\n", buffer->ReparseTag);
-            status = STATUS_NOT_IMPLEMENTED;
-            break;
-        }
-        break;
-    }
-    case FSCTL_GET_REPARSE_POINT:
-    {
-        REPARSE_DATA_BUFFER *buffer = (REPARSE_DATA_BUFFER *)out_buffer;
-        status = FILE_GetSymlink( handle, buffer, out_size );
-        break;
-    }
-    case FSCTL_SET_REPARSE_POINT:
-    {
-        REPARSE_DATA_BUFFER *buffer = (REPARSE_DATA_BUFFER *)in_buffer;
-
-        switch(buffer->ReparseTag)
-        {
-        case IO_REPARSE_TAG_MOUNT_POINT:
-        case IO_REPARSE_TAG_SYMLINK:
-            status = FILE_CreateSymlink( handle, buffer );
-            break;
-        default:
-            FIXME("stub: FSCTL_SET_REPARSE_POINT(%x)\n", buffer->ReparseTag);
-            status = STATUS_NOT_IMPLEMENTED;
-            break;
-        }
         break;
     }
 
@@ -7611,7 +6971,7 @@ NTSTATUS WINAPI NtQueryObject( HANDLE handle, OBJECT_INFORMATION_CLASS info_clas
 
         /* first try as a file object */
 
-        if (!(status = server_get_unix_name( handle, &unix_name, FALSE )))
+        if (!(status = server_get_unix_name( handle, &unix_name )))
         {
             if (!(status = unix_to_nt_file_name( unix_name, &nt_name )))
             {

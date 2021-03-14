@@ -94,7 +94,6 @@
 #include "wine/server.h"
 #include "wine/debug.h"
 #include "unix_private.h"
-#include "esync.h"
 #include "ddk/wdm.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(server);
@@ -135,7 +134,7 @@ timeout_t server_start_time = 0;  /* time of server startup */
 sigset_t server_block_set;  /* signals to block during server calls */
 static int fd_socket = -1;  /* socket to exchange file descriptors with the server */
 static pid_t server_pid;
-pthread_mutex_t fd_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t fd_cache_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* atomically exchange a 64-bit value */
 static inline LONG64 interlocked_xchg64( LONG64 *dest, LONG64 val )
@@ -757,7 +756,10 @@ NTSTATUS WINAPI NtContinue( CONTEXT *context, BOOLEAN alertable )
         status = server_select( NULL, 0, SELECT_INTERRUPTIBLE | SELECT_ALERTABLE, 0, NULL, NULL, &apc );
         if (status == STATUS_USER_APC) invoke_apc( context, &apc );
     }
-    return NtSetContextThread( GetCurrentThread(), context );
+    status = NtSetContextThread( GetCurrentThread(), context );
+    if (!status && (context->ContextFlags & CONTEXT_INTEGER) == CONTEXT_INTEGER)
+        signal_restore_full_cpu_context();
+    return status;
 }
 
 
@@ -863,7 +865,7 @@ void CDECL wine_server_send_fd( int fd )
  *
  * Receive a file descriptor passed from the server.
  */
-int receive_fd( obj_handle_t *handle )
+static int receive_fd( obj_handle_t *handle )
 {
     struct iovec vec;
     struct msghdr msghdr;
@@ -1761,9 +1763,6 @@ NTSTATUS WINAPI NtClose( HANDLE handle )
     HANDLE port;
     NTSTATUS ret;
     int fd = remove_fd_from_cache( handle );
-
-    if (do_esync())
-        esync_close( handle );
 
     SERVER_START_REQ( close_handle )
     {

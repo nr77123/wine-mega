@@ -28,8 +28,6 @@
 
 #include "wine/list.h"
 
-DEFINE_GUID(IID_IWineD3DDevice, 0xd56e2a4c, 0x5127, 0x8437, 0x65, 0x8a, 0x98, 0xc5, 0xbb, 0x78, 0x94, 0x98);
-
 #define WINED3D_OK                                              S_OK
 
 #define _FACWINED3D                                             0x876
@@ -2225,6 +2223,7 @@ struct wined3d_blend_state;
 struct wined3d_buffer;
 struct wined3d_depth_stencil_state;
 struct wined3d_device;
+struct wined3d_device_context;
 struct wined3d_output;
 struct wined3d_palette;
 struct wined3d_query;
@@ -2234,6 +2233,7 @@ struct wined3d_resource;
 struct wined3d_sampler;
 struct wined3d_shader;
 struct wined3d_shader_resource_view;
+struct wined3d_state;
 struct wined3d_stateblock;
 struct wined3d_swapchain;
 struct wined3d_swapchain_state;
@@ -2423,6 +2423,7 @@ struct wined3d_shader_resource_view * __cdecl wined3d_device_get_hs_resource_vie
         unsigned int idx);
 struct wined3d_sampler * __cdecl wined3d_device_get_hs_sampler(const struct wined3d_device *device, unsigned int idx);
 struct wined3d_shader * __cdecl wined3d_device_get_hull_shader(const struct wined3d_device *device);
+struct wined3d_device_context * __cdecl wined3d_device_get_immediate_context(struct wined3d_device *device);
 struct wined3d_buffer * __cdecl wined3d_device_get_index_buffer(const struct wined3d_device *device,
         enum wined3d_format_id *format, unsigned int *offset);
 unsigned int __cdecl wined3d_device_get_max_frame_latency(const struct wined3d_device *device);
@@ -2443,6 +2444,7 @@ struct wined3d_rendertarget_view * __cdecl wined3d_device_get_rendertarget_view(
 void __cdecl wined3d_device_get_scissor_rects(const struct wined3d_device *device, unsigned int *rect_count,
         RECT *rect);
 BOOL __cdecl wined3d_device_get_software_vertex_processing(const struct wined3d_device *device);
+struct wined3d_state * __cdecl wined3d_device_get_state(struct wined3d_device *device);
 struct wined3d_buffer * __cdecl wined3d_device_get_stream_output(struct wined3d_device *device,
         UINT idx, UINT *offset);
 HRESULT __cdecl wined3d_device_get_stream_source(const struct wined3d_device *device,
@@ -2533,6 +2535,7 @@ HRESULT __cdecl wined3d_device_set_rendertarget_view(struct wined3d_device *devi
 void __cdecl wined3d_device_set_scissor_rects(struct wined3d_device *device,
         unsigned int rect_count, const RECT *rect);
 void __cdecl wined3d_device_set_software_vertex_processing(struct wined3d_device *device, BOOL software);
+void __cdecl wined3d_device_set_state(struct wined3d_device *device, struct wined3d_state *state);
 void __cdecl wined3d_device_set_stream_output(struct wined3d_device *device, UINT idx,
         struct wined3d_buffer *buffer, UINT offset);
 HRESULT __cdecl wined3d_device_set_stream_source(struct wined3d_device *device,
@@ -2554,6 +2557,17 @@ void __cdecl wined3d_device_update_sub_resource(struct wined3d_device *device, s
 HRESULT __cdecl wined3d_device_update_texture(struct wined3d_device *device,
         struct wined3d_texture *src_texture, struct wined3d_texture *dst_texture);
 HRESULT __cdecl wined3d_device_validate_device(const struct wined3d_device *device, DWORD *num_passes);
+
+void __cdecl wined3d_device_context_set_blend_state(struct wined3d_device_context *context,
+        struct wined3d_blend_state *state, const struct wined3d_color *blend_factor, unsigned int sample_mask);
+void __cdecl wined3d_device_context_set_constant_buffer(struct wined3d_device_context *context,
+        enum wined3d_shader_type type, unsigned int idx, struct wined3d_buffer *buffer);
+void __cdecl wined3d_device_context_set_depth_stencil_state(struct wined3d_device_context *context,
+        struct wined3d_depth_stencil_state *depth_stencil_state, unsigned int stencil_ref);
+void __cdecl wined3d_device_context_set_rasterizer_state(struct wined3d_device_context *context,
+        struct wined3d_rasterizer_state *rasterizer_state);
+void __cdecl wined3d_device_context_set_shader(struct wined3d_device_context *context,
+        enum wined3d_shader_type type, struct wined3d_shader *shader);
 
 HRESULT __cdecl wined3d_output_find_closest_matching_mode(const struct wined3d_output *output,
         struct wined3d_display_mode *mode);
@@ -2744,6 +2758,9 @@ ULONG __cdecl wined3d_shader_resource_view_decref(struct wined3d_shader_resource
 void __cdecl wined3d_shader_resource_view_generate_mipmaps(struct wined3d_shader_resource_view *view);
 void * __cdecl wined3d_shader_resource_view_get_parent(const struct wined3d_shader_resource_view *view);
 ULONG __cdecl wined3d_shader_resource_view_incref(struct wined3d_shader_resource_view *view);
+
+HRESULT __cdecl wined3d_state_create(struct wined3d_device *device, struct wined3d_state **state);
+void __cdecl wined3d_state_destroy(struct wined3d_state *state);
 
 void __cdecl wined3d_stateblock_apply(const struct wined3d_stateblock *stateblock,
         struct wined3d_stateblock *device_state);
